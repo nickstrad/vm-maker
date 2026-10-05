@@ -8,20 +8,20 @@ providers, starting with **Hetzner Cloud** and **DigitalOcean**.
 Provider CLIs (`hcloud`, `doctl`) are powerful, and that is the problem. One typo in a loop or
 script can create forty servers. vm-maker trades breadth for guardrails:
 
-- **One VM at a time** by default. More requires an explicit config option *and* a flag, both
-  capped by hard limits.
+- **One VM at a time** by default. More requires an explicit config option _and_ a flag, both capped
+  by hard limits.
 - **Hard upper bounds** on vCPU, memory, disk, TTL and the number of live VMs it manages.
-- **No invalid combinations.** Specs are checked against the provider's real catalog (server type
-  × region × image × architecture) before any request is sent. `--dry-run` shows exactly what
-  would be sent.
+- **No invalid combinations.** Specs are checked against the provider's real catalog (server type ×
+  region × image × architecture) before any request is sent. `--dry-run` shows exactly what would be
+  sent.
 - **TTLs.** Give a VM a lifetime (`--ttl 4h`); `vm-maker reap` deletes expired VMs.
 - **cloud-init built in,** so VMs boot already configured from a file or a typed template.
 - **Direct API calls,** not CLI wrappers: one typed request and error model across providers.
-- **Testing is first class.** The pure policy core is property-tested with fast-check, and the
-  whole tool runs against an in-memory fake provider.
+- **Testing is first class.** The pure policy core is property-tested with fast-check, and the whole
+  tool runs against an in-memory fake provider.
 
-See [architecture.md](architecture.md) for the design and [cli.md](cli.md) for the candidate
-command-line interfaces.
+See [architecture.md](docs/architecture.md) for the design and [cli.md](docs/cli.md) for the
+candidate command-line interfaces.
 
 ## Status
 
@@ -29,8 +29,8 @@ Early design. The code is currently a hello-world scaffold that confirms the too
 
 ## Stack
 
-[Deno 2](https://deno.com) · [Effect](https://effect.website) for typed errors, services and
-bounded retries · Effect Schema (or zod) for parsing · [fast-check](https://fast-check.dev) for
+[Deno 2](https://deno.com) · [Effect](https://effect.website) for typed errors, services and bounded
+retries · Effect Schema (or zod) for parsing · [fast-check](https://fast-check.dev) for
 property-based tests.
 
 ## Getting started
