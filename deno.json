@@ -11,8 +11,8 @@
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@^1",
-    "effect": "npm:effect@^3",
-    "fast-check": "npm:fast-check@^3.23"
+    "effect": "npm:effect@^4.0.0",
+    "fast-check": "npm:fast-check@^4"
   },
   "compilerOptions": {
     "strict": true,

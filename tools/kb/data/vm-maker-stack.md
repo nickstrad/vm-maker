@@ -21,11 +21,11 @@ deno --version   # deno 2.9.5
 | Concern | Choice |
 | --- | --- |
 | Runtime, tests, fmt/lint, compile | Deno 2 |
-| Effects, typed errors, DI, bounded retries | `effect` (`npm:effect@^3`) |
-| Schemas / parsing | Effect Schema (part of `effect`); `Arbitrary.make(schema)` derives fast-check generators |
+| Effects, typed errors, DI, bounded retries | `effect` 4 (`npm:effect@^4.0.0`; resolves 4.0.0 until 4.0.1 clears Deno's 24h minimum-dependency-age policy) |
+| Schemas / parsing | Effect Schema (`effect` 4: `Schema.Trim.check(Schema.isNonEmpty(), …)`, `decodeUnknownEffect`, `Result` replaces `Either`). Effect 4 no longer bundles fast-check; tests build generators with fast-check directly |
 | Property tests | `fast-check` (`npm:fast-check@^4`) |
 | Assertions | `@std/assert` (`jsr:@std/assert@^1`) |
-| Planned | `@effect/cli` for argv, `@effect/platform` `HttpClient` for HTTP |
+| Planned | `effect/cli` for argv, `effect/http` `HttpClient` for HTTP (merged into the `effect` package in v4) |
 
 `deno.json` sets `strict`, `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess`, and
 `fmt.lineWidth` 100.

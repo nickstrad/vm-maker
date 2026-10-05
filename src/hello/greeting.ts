@@ -1,9 +1,7 @@
 import { Data, Effect, Schema } from "effect";
 
 /** A name we are willing to greet: trimmed, non-empty, and bounded in length. */
-export const Name = Schema.Trim.pipe(
-  Schema.nonEmptyString(),
-  Schema.maxLength(64),
+export const Name = Schema.Trim.check(Schema.isNonEmpty(), Schema.isMaxLength(64)).pipe(
   Schema.brand("Name"),
 );
 export type Name = typeof Name.Type;
@@ -15,7 +13,7 @@ export const greeting = (name: Name): string => `Hello, ${name}!`;
 
 /** Decodes untrusted input, failing with a typed error instead of throwing. */
 export const greet = (input: string): Effect.Effect<string, InvalidName> =>
-  Schema.decodeUnknown(Name)(input).pipe(
+  Schema.decodeUnknownEffect(Name)(input).pipe(
     Effect.map(greeting),
     Effect.mapError(() => new InvalidName({ input })),
   );
