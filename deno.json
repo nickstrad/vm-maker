@@ -23,7 +23,6 @@
     "lineWidth": 100
   },
   "exclude": [
-    "tools/",
     "docs/",
     "architecture.md"
   ]
