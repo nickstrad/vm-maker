@@ -1,0 +1,5 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph LR
+  REAP["reaper [io]"] --> PLN["planner [pure]"]
+  PLN --> EXE["executor [io]"]
+  DOM["domain [pure], shared by all"]

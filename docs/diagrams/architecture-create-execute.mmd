@@ -3,19 +3,13 @@ sequenceDiagram
   autonumber
   participant U as User
   participant CLI
-  participant PLN as Planner
   participant EXE as Executor
-  participant API as Provider API
-  CLI->>PLN: ResolvedSpec
-  PLN-->>CLI: Plan
-  opt dry-run
-    CLI-->>U: print plan, exit 0
-  end
+  participant API as Provider
   CLI->>EXE: run Plan
   EXE->>API: request-id?
-  Note over EXE,API: skip create if label found
+  Note over EXE,API: skip if found
   EXE->>API: POST create
-  Note over EXE,API: labels + user-data
+  Note over EXE,API: labels, user-data
   loop every 2s, max 3m
     EXE->>API: GET status
   end

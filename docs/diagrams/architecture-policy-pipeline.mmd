@@ -1,9 +1,9 @@
 %% draw-visual: -x 3 -y 1 -p 0
 graph TD
   IN["raw input"] --> DEC["decode to branded types"]
-  DEC --> CL["limits: request <= config <= hard cap"]
+  DEC --> CL["limits: request <= config <= cap"]
   CL --> CNT["count check vs live VMs"]
-  CNT --> CMP["catalog: type x location x image x arch"]
+  CNT --> CMP["catalog: type, region, image, arch"]
   CMP --> SEL["select cheapest, ties by name"]
   SEL --> CI["cloud-init: schema, size"]
   CI --> OK["ResolvedSpec"]

@@ -1,8 +1,6 @@
-%% draw-visual: -x 2 -y 1 -p 0
+%% draw-visual: -x 3 -y 1 -p 0
 graph LR
   EXE["executor"] --> PRT["Provider port"]
   PRT --> HZ["hetzner + labels"]
   PRT --> DO["digitalocean + labels"]
   PRT --> FK["fake, in-memory"]
-  HZ -->|HttpClient| HAPI["Hetzner API"]
-  DO -->|HttpClient| DAPI["DO API"]

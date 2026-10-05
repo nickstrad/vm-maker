@@ -1,0 +1,11 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant CLI
+  participant PLN as Planner
+  CLI->>PLN: ResolvedSpec
+  PLN-->>CLI: Plan
+  opt dry-run
+    CLI-->>U: print plan, exit 0
+  end

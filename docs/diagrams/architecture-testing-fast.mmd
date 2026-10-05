@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 0 -p 0
+graph LR
+  T["default run"] --> PT["most: property"]
+  T --> MB["many: model-based"]
+  T --> UT["unit"]
+  PT --> PTA["pure core, no Layer"]
+  MB --> MBA["fc.commands + fake"]
+  UT --> UTA["core + fake"]
