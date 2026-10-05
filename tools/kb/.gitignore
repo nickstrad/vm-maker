@@ -1,0 +1,6 @@
+# Built binary (rebuilt on demand by bin/kb-local).
+.cache/
+# Generated search index and search/feedback log. Rebuild with: tools/kb/bin/kb-local reindex --all
+.kb/
+# Optional Markdown snapshot from `kb index`.
+index.md
