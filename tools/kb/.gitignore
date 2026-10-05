@@ -4,3 +4,5 @@
 .kb/
 # Optional Markdown snapshot from `kb index`.
 index.md
+# The repo-root .gitignore ignores bin/ (deno compile output); keep the wrapper tracked.
+!bin/
