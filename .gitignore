@@ -1,0 +1,37 @@
+# Deno
+.deno/
+deno.lock.bak
+node_modules/
+coverage/
+cov_profile/
+*.lcov
+
+# Build output (deno compile)
+bin/
+dist/
+
+# Secrets & local config — provider API tokens must never be committed
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_*
+vm-maker.local.*
+.vm-maker/
+
+# Rendered cloud-init with injected secrets
+*.rendered.yaml
+
+# Editors / OS
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
