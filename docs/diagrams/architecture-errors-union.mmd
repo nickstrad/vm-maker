@@ -1,0 +1,7 @@
+%% draw-visual: -x 3 -y 0 -p 0
+graph LR
+  CE["CreateError"] --> DE["DecodeError, exit 2"]
+  CE --> PV["PolicyViolation, exit 3"]
+  CE --> LE["LimitExceeded, exit 4"]
+  CE --> PE["ProviderError, exit 5"]
+  CE --> PT["ProvisionTimeout, exit 9"]

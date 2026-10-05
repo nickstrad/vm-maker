@@ -1,0 +1,14 @@
+%% draw-visual: -x 2 -y 1 -p 0
+graph TD
+  L["provide one Layer"] -->|prod| HL["HetznerLive"]
+  L -->|prod| DL["DigitalOceanLive"]
+  L -->|unit| FT["FakeProviderTest"]
+  L -->|contract| RT["RecordedHttpTest"]
+  HL --> HLC["live HttpClient"]
+  DL --> DLC["live HttpClient"]
+  FT --> FTC["in-memory fake"]
+  RT --> RTC["HttpClient replay"]
+  HLC --> HLK["+ real Clock"]
+  DLC --> DLK["+ real Clock"]
+  FTC --> FTK["+ TestClock"]
+  RTC --> RTK["+ fixtures"]

@@ -1,0 +1,6 @@
+%% draw-visual: -x 3 -y 0 -p 0
+graph LR
+  PE["ProviderError"] --> AU["Auth"]
+  PE --> RL["RateLimited"]
+  PE --> NF["NotFound"]
+  PE --> SE["ServerError"]

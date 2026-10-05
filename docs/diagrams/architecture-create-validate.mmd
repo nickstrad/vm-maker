@@ -1,0 +1,23 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant CLI
+  participant CFG as Config
+  participant CAT as Catalog
+  participant POL as Policy
+  U->>CLI: create
+  CLI->>CFG: decode
+  CFG-->>CLI: VmSpec
+  CLI->>CAT: fetch
+  Note over CAT: GET types, locations, images
+  Note over CAT: count live VMs
+  CAT-->>CLI: Catalog, live count
+  CLI->>POL: resolve
+  Note over POL: pure
+  alt violations
+    POL-->>CLI: PolicyViolation[]
+    CLI-->>U: exit 3
+  else ok
+    POL-->>CLI: ResolvedSpec
+  end

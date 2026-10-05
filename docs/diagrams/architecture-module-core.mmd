@@ -1,0 +1,11 @@
+%% draw-visual: -x 1 -y 1 -p 0
+graph TD
+  CLI["cli [io]"] --> CFG["config [pure]"]
+  CFG --> POL["policy [pure]"]
+  CAT["catalog [io]"] --> POL
+  POL --> PLN["planner [pure]"]
+  CI["cloudinit [pure]"] --> PLN
+  REAP["reaper [io]"] --> PLN
+  PLN --> EXE["executor [io]"]
+  REAP --> EXE
+  DOM["domain [pure]"]

@@ -1,0 +1,7 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  RUN["Running"] -->|now > expires-at| EXP["Expired"]
+  EXP -->|optional in-VM timer| OFF["PoweredOff, still billed"]
+  OFF -->|reap| DEL["Deleted, reap caps N per run"]
+  EXP -->|reap| DEL
+  RUN -->|delete| DEL
