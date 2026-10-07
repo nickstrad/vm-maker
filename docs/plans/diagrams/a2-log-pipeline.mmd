@@ -1,0 +1,9 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  CALL["Effect.log, annotateLogs"] --> LVL["level filter"]
+  LVL --> RED["redact"]
+  RED --> JSON["JSONL line"]
+  JSON --> ERRS["stderr"]
+  ERR["AppError + Cause"] --> REP["renderErrorReport"]
+  REP --> ERRS
+  REP --> ENV["envelope errors[] (b1)"]

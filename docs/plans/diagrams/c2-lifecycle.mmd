@@ -1,0 +1,9 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph LR
+  H["handlers stop, start, delete"] --> R["render receipt"]
+  R --> OUT["envelope (b1)"]
+  H --> LC["runLifecycle"]
+  LC --> DEC["decide [pure]"]
+  LC --> CONF["Confirmation"]
+  LC --> PORT["ProviderPort"]
+  LC --> WAIT["waitFor (b6)"]

@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  PORT["ProviderPort (a1)"] --> AD["digitalocean adapter"]
+  AD --> PURE["paths, encodeCreate, normalize [pure]"]
+  AD --> API["ApiClient (b3)"]
+  PURE --> SCH["schemas"]
+  API --> DO["api.digitalocean.com"]
+  FIX["fixtures (tests)"] --> API

@@ -1,0 +1,9 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  LOC["locate [pure]"] --> READ["read file"]
+  READ --> TOML["@std/toml parse"]
+  TOML --> DEC["Schema decode, strict"]
+  DEC --> MRG["merge defaults [pure]"]
+  MRG --> EFF["EffectiveConfig + sources"]
+  EFF --> SHOW["showView, checkReport (c4)"]
+  EFF --> CREATE["create prefs, limits (c3)"]

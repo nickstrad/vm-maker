@@ -1,0 +1,10 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  IN["request, catalog, prefs, limits"] --> L1["minimums vs limits"]
+  L1 --> DEF["resolveDefaults"]
+  L1 --> E4["LimitExceeded exit 4"]
+  DEF --> CMP["compatibleTypes"]
+  CMP --> SEL["smallestFit or explicit"]
+  CMP --> E3["Conflict exit 3"]
+  SEL --> L2["type vs limits"]
+  L2 --> OUT["ResolvedCreate"]

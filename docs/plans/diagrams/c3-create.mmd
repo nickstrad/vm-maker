@@ -1,0 +1,10 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  H["handler create"] --> C["create command"]
+  C --> S1["loadPrefs: ConfigService (b2)"]
+  S1 --> S2["fetchCatalog: port.getCatalog"]
+  S2 --> S3["resolve: resolveCreate (b5)"]
+  S3 --> S4["readUserData: checkUserData (b5)"]
+  S4 --> S5["encode: port.encodeCreate"]
+  S5 --> S6["submit: port.createVm once, or preview"]
+  S6 --> S7["wait: waitFor (b6)"]

@@ -1,0 +1,18 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant M as main
+  participant P as parse
+  participant R as runCli
+  participant H as handler
+  participant O as output
+  M->>P: argv
+  P-->>R: Invocation or Usage
+  R->>H: run(invocation)
+  alt success
+    H-->>R: data + renderText
+    R->>O: envelope, exit 0
+  else AppError
+    H--xR: typed error
+    R->>O: report, envelope, exit>0
+  end

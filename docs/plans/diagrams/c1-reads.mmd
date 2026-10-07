@@ -1,0 +1,6 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  H["cli handlers + render"] --> CMD["commands list, show, catalog"]
+  CMD --> REG["ProviderRegistry"]
+  CMD --> LIM["limits (b2 config, b5 policy)"]
+  REG --> PORT["ProviderPort (b4 fake, d1 live)"]

@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  PORT["ProviderPort (a1)"] --> AD["hetzner adapter"]
+  AD --> PURE["paths, encodeCreate, normalize [pure]"]
+  AD --> API["ApiClient (b3)"]
+  PURE --> SCH["schemas"]
+  API --> HZ["api.hetzner.cloud"]
+  FIX["fixtures (tests)"] --> API

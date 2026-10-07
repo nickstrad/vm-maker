@@ -1,0 +1,9 @@
+%% draw-visual: -x 2 -y 1 -p 0
+graph LR
+  ARGV["argv"] --> PARSE["parse [pure]"]
+  PARSE --> INV["Invocation"]
+  INV --> RUN["runCli"]
+  RUN --> H["handlers (c wave)"]
+  RUN --> ENV["envelope stdout"]
+  RUN --> REP["report stderr (a2)"]
+  RUN --> EXIT["domain/exit (a1)"]

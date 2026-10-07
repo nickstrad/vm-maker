@@ -1,0 +1,5 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph LR
+  MAIN["main.ts"] --> RUN["runCli (b1)"]
+  MAIN --> REG["ProviderRegistryLive"]
+  MAIN --> TTY["ConfirmationTty (c2)"]

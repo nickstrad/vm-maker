@@ -1,0 +1,14 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant A as adapter
+  participant C as ApiClient
+  participant P as provider API
+  A->>C: read(request)
+  C->>P: GET, 30s timeout
+  P--xC: 503 or timeout
+  Note over C: retryDecision: attempt 1, in budget
+  C->>P: GET after 1s
+  P-->>C: 200 body
+  C-->>A: decoded value
+  Note over A,P: mutate() never retries: lost reply is OutcomeUnknown

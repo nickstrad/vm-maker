@@ -1,0 +1,13 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant T as smoke test
+  participant C as runCli
+  participant P as real provider
+  T->>C: create smoke-ts --wait --user-data lab.yaml
+  C->>P: one createVm, polls
+  P-->>C: running
+  T->>C: show, stop --yes --wait, start --wait
+  T->>C: delete --yes --wait
+  C->>P: deleteVm, polls until absent
+  Note over T,P: finally: delete any id still present, else print MANUAL CLEANUP

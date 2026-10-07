@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  TEST["command tests (c wave)"] --> SEED["FakeSeed: vms, catalog, faults"]
+  SEED --> LAYER["FakeProvider.layer"]
+  LAYER --> PORT["ProviderPort (a1)"]
+  LAYER --> HANDLE["FakeHandle: mutations, settleNow"]
+  PORT --> TR["transitions [pure]"]
+  TR --> REF["Ref state"]

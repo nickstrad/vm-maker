@@ -1,0 +1,6 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph LR
+  REG["ProviderRegistryLive"] --> CFG["ConfigService tokenEnv (b2)"]
+  REG --> ENV["Config.redacted from env"]
+  REG --> HZ["HetznerProvider.layer (c5)"]
+  REG --> DO["DigitalOceanProvider.layer (c6)"]

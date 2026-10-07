@@ -1,0 +1,13 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant L as list
+  participant H as hetzner
+  participant D as digitalocean
+  participant E as envelope
+  L->>H: listVms
+  L->>D: listVms
+  H-->>L: rows
+  D--xL: Auth error
+  Note over L,H: combine rows and failures
+  L->>E: ok false, rows, errors [digitalocean], exit 5

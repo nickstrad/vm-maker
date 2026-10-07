@@ -1,0 +1,9 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  V["current Vm"] --> S{"status stable?"}
+  S -->|no| C["Conflict, exit 3"]
+  S -->|yes| T{"already in target?"}
+  T -->|yes| N["noop, exit 0"]
+  T -->|no| D{"dry-run?"}
+  D -->|yes| P["preview, no prompt"]
+  D -->|no| M["confirm, re-fetch, mutate once"]

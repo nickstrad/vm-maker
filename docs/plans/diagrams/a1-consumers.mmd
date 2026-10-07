@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph LR
+  DOM["domain/ + port.ts [a1]"] --> CLI["cli/ [b1]"]
+  DOM --> HTTP["http/ [b3]"]
+  DOM --> FAKE["providers/fake/ [b4]"]
+  DOM --> POL["policy/ [b5]"]
+  DOM --> WAIT["wait/ [b6]"]
+  DOM --> ADP["adapters [c5, c6]"]

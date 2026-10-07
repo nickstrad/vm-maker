@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  ADP["adapter (c5, c6)"] --> API["ApiClient read / mutate (effect/http)"]
+  ADP --> PAG["collectPages"]
+  PAG --> API
+  PAG --> NEXT["nextPage [pure]"]
+  API --> PURE["retryDecision, classifyResponse [pure]"]
+  PURE --> ERR["domain/errors (a1)"]

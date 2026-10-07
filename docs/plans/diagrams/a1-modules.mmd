@@ -1,0 +1,8 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  IDS["ids, units"] --> VM["vm, catalog"]
+  VM --> INV["inventory, mutation"]
+  INV --> REQ["requests"]
+  REQ --> PORT["providers/port.ts"]
+  ERR["errors"] --> EXIT["exit codes"]
+  ERR --> PORT

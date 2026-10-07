@@ -1,0 +1,7 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  H["handlers config show, check"] --> C["commands/config"]
+  C --> CFG["ConfigService (b2)"]
+  CFG --> V["showView, checkReport"]
+  H --> R["render config table"]
+  R --> OUT["envelope (b1)"]

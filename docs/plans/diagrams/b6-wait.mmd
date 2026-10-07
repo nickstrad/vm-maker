@@ -1,0 +1,19 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant CMD as command
+  participant W as waitFor
+  participant P as port
+  CMD->>W: receipt, condition, deadline
+  loop every 2s until deadline
+    W->>P: getAction(id)
+    P-->>W: ActionStatus
+    W->>P: getVm(id)
+    P-->>W: Vm or NotFound
+    Note over W: evaluate: settled, pending, failed
+  end
+  alt settled
+    W-->>CMD: last Vm
+  else deadline
+    W--xCMD: WaitTimeout with ids, exit 9
+  end
