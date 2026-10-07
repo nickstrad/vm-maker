@@ -1,0 +1,186 @@
+#cloud-config
+# =============================================================================
+# lab.yaml - cloud-init for vm-maker lab VMs (Ubuntu 24.04 noble)
+#
+# Purpose: turn a fresh Hetzner Cloud or DigitalOcean VM (x86_64 or arm64)
+# into a ready dev/lab box: lab user, Docker, Tailscale, Node.js 22, Claude
+# Code, Codex, DuckDB and common CLI tooling. Progress is logged to
+# /var/log/lab-cloud-init.log; /var/lib/cloud/instance/lab-ready is created
+# when the runcmd phase finishes.
+#
+# This committed file is a TEMPLATE and holds no secrets. It contains five
+# envsubst placeholders (written as dollar + braces + NAME):
+#   TAILSCALE_AUTHKEY CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+#   OPENAI_API_KEY GH_TOKEN
+# Render a copy (git-ignored via *.rendered.yaml); pass the explicit variable
+# list so no other dollar-sign text in this file is touched:
+#   envsubst '<the five placeholders, each as dollar-brace-NAME, space-separated>' \
+#     < cloud-init/lab.yaml > cloud-init/lab.rendered.yaml
+# (exact command in cloud-init/README.md)
+# Then: vm-maker create NAME --user-data cloud-init/lab.rendered.yaml
+# Empty or unrendered values are fine: those env lines are removed and
+# tailscale up is skipped, so the raw template also boots cleanly.
+# Everything else in this file must use $(...) or plain $VAR, never the
+# braces form, so envsubst cannot collide with it.
+#
+# SIZE LIMIT: keep this file under 32 KiB (32768 bytes). Hetzner's user_data
+# limit is 32 KiB; DigitalOcean allows 64 KiB.
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+package_reboot_if_required: false
+
+# Create the docker group up front so the lab user can join it at user-creation
+# time (the Docker packages are installed later and reuse this group).
+groups:
+  - docker
+
+users:
+  - default
+  - name: lab
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: sudo,docker
+    lock_passwd: true
+
+apt:
+  sources:
+    docker.list:
+      source: "deb [signed-by=$KEY_FILE] https://download.docker.com/linux/ubuntu $RELEASE stable"
+      keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+      keyserver: keyserver.ubuntu.com
+
+packages:
+  - git
+  - gh
+  - curl
+  - wget
+  - ca-certificates
+  - gnupg
+  - jq
+  - htop
+  - btop
+  - tmux
+  - vim
+  - neovim
+  - ripgrep
+  - fd-find
+  - fzf
+  - bat
+  - tree
+  - unzip
+  - zip
+  - ncdu
+  - lsof
+  - strace
+  - tcpdump
+  - socat
+  - net-tools
+  - dnsutils
+  - iproute2
+  - rsync
+  - man-db
+  - less
+  - build-essential
+  - make
+  - python3
+  - python3-pip
+  - python3-venv
+  - pipx
+  - sqlite3
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+write_files:
+  # Optional agent credentials. Placeholders are filled by envsubst on the
+  # workstation; lines left empty are deleted in runcmd. defer: true runs this
+  # after the lab user exists so the owner can be applied.
+  - path: /home/lab/.config/lab/agents.env
+    owner: lab:lab
+    permissions: "0600"
+    defer: true
+    content: |
+      export CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN}"
+      export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"
+      export OPENAI_API_KEY="${OPENAI_API_KEY}"
+      export GH_TOKEN="${GH_TOKEN}"
+
+runcmd:
+  # All output of every runcmd step goes to the log. runcmd items are joined
+  # into one shell script, so exec and set -eux apply to all following steps.
+  # Optional steps guard themselves with "|| echo" so they cannot abort it.
+  - |
+    exec >>/var/log/lab-cloud-init.log 2>&1
+    set -ex
+    echo "=== lab cloud-init runcmd start: $(date -u) ==="
+
+  # Docker
+  - systemctl enable --now docker
+  - usermod -aG docker lab
+
+  # Provider-injected root keys also work for the lab user.
+  - |
+    if [ -f /root/.ssh/authorized_keys ]; then
+      install -d -m 0700 -o lab -g lab /home/lab/.ssh
+      install -m 0600 -o lab -g lab /root/.ssh/authorized_keys /home/lab/.ssh/authorized_keys
+    fi
+
+  # Debian/Ubuntu rename these binaries; add the usual names.
+  - |
+    ln -sf /usr/bin/batcat /usr/local/bin/bat
+    ln -sf /usr/bin/fdfind /usr/local/bin/fd
+
+  # Tailscale. Only joins the tailnet when an auth key was rendered in.
+  - |
+    curl -fsSL https://tailscale.com/install.sh | sh || echo "WARN: tailscale install failed"
+    TS_KEY="${TAILSCALE_AUTHKEY}"
+    if [ -n "$TS_KEY" ]; then
+      set +x
+      tailscale up --authkey="$TS_KEY" --ssh || echo "WARN: tailscale up failed; run it manually"
+      set -x
+    else
+      echo "NOTE: no Tailscale auth key supplied; run 'sudo tailscale up --ssh' manually"
+    fi
+    unset TS_KEY
+
+  # Node.js 22 (NodeSource) and agent CLIs.
+  - |
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - || echo "WARN: nodesource setup failed"
+    apt-get install -y nodejs || echo "WARN: nodejs install failed"
+    npm install -g @anthropic-ai/claude-code @openai/codex || echo "WARN: npm global install failed"
+
+  # DuckDB CLI. Asset names verified against the GitHub release list:
+  # duckdb_cli-linux-amd64.zip (x86_64) and duckdb_cli-linux-arm64.zip (aarch64).
+  - |
+    (
+      set -e
+      case "$(uname -m)" in
+        x86_64) DUCK_ARCH=amd64 ;;
+        aarch64|arm64) DUCK_ARCH=arm64 ;;
+        *) echo "unsupported arch for duckdb: $(uname -m)"; exit 1 ;;
+      esac
+      TMP=$(mktemp -d)
+      curl -fsSL -o "$TMP/duckdb.zip" "https://github.com/duckdb/duckdb/releases/latest/download/duckdb_cli-linux-$DUCK_ARCH.zip"
+      unzip -o "$TMP/duckdb.zip" -d /usr/local/bin
+      chmod +x /usr/local/bin/duckdb
+      rm -rf "$TMP"
+    ) || echo "WARN: duckdb install failed (optional)"
+
+  # Agent env: drop empty values, fix ownership, source from .bashrc.
+  - |
+    if [ -f /home/lab/.config/lab/agents.env ]; then
+      # Drop values left empty by envsubst and placeholders never rendered.
+      sed -i -E '/=""$/d; /="\$\{[A-Z_]+\}"$/d' /home/lab/.config/lab/agents.env
+      chown -R lab:lab /home/lab/.config
+      chmod 0600 /home/lab/.config/lab/agents.env
+    fi
+    echo '[ -f "$HOME/.config/lab/agents.env" ] && . "$HOME/.config/lab/agents.env"' >> /home/lab/.bashrc
+    chown lab:lab /home/lab/.bashrc
+
+  - |
+    echo "=== lab cloud-init runcmd done: $(date -u) ==="
+    touch /var/lib/cloud/instance/lab-ready
