@@ -1,6 +1,0 @@
-%% draw-visual: -x 3 -y 1 -p 0
-graph TD
-  L["test Layer"] -->|unit| FT["FakeProviderTest"]
-  L -->|contract| RT["RecordedHttpTest"]
-  FT --> FTC["in-memory + TestClock"]
-  RT --> RTC["HttpClient replay"]

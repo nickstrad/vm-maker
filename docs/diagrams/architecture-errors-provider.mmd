@@ -1,6 +1,7 @@
 %% draw-visual: -x 3 -y 0 -p 0
 graph LR
-  PE["ProviderError"] --> AU["Auth"]
-  PE --> RL["RateLimited"]
-  PE --> NF["NotFound"]
-  PE --> SE["ServerError"]
+  E5["Provider error, exit 5"] --> AU["Auth"]
+  E5 --> PR["ProviderRejected"]
+  E5 --> TR["Transport"]
+  E5 --> OU["OutcomeUnknown"]
+  E5 --> II["IncompleteInventory"]

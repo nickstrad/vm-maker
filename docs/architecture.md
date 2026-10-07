@@ -1,622 +1,442 @@
 # vm-maker architecture
 
-vm-maker is a CLI that creates, reads, updates and deletes virtual machines at cloud providers
-(Hetzner Cloud and DigitalOcean first). It calls each provider's HTTP API directly instead of
-wrapping `hcloud` or `doctl`. That gives us one typed request model, one error model, and the
-ability to swap every provider for an in-memory fake in tests.
+This document derives the proposed architecture from [the CLI contract](cli.md). The current
+implementation is a hello-world scaffold. V1 is a stateless API client for lab VMs on
+Hetzner Cloud and DigitalOcean.
 
-The tool is built so that **it cannot do something expensive by accident**. Every design decision
-below serves one of these invariants.
+## State and lifetime
 
-## Invariants
+The provider owns VM state. Each invocation fetches current inventory or the selected VM,
+performs one requested operation, and exits. Any VM accessible to the credentials can be
+managed regardless of which tool created it. Identity is `(provider, opaque ID)`.
 
-| # | Invariant | Enforced by |
+Only API credentials are needed for rediscovery. Optional config contains preferences and
+editable creation limits. No inventory, VM IDs, action history, catalog cache, or desired
+state is persisted locally. Callers may capture command output, but no later command depends
+on it.
+
+V1 has no TTL, expiry metadata, reaper, scheduler, ownership gate, spec hash, or saved-plan
+workflow. VMs exist until explicitly deleted through this CLI, another API client, or the UI.
+
+## Command dependencies
+
+| CLI command | Reads | Decision | Mutation |
+| --- | --- | --- | --- |
+| `list` | Paginated inventory from one or both providers | Normalize/filter results, expose incomplete reads | None |
+| `show ID` | Current VM and available resource references | Normalize details | None |
+| `create NAME` | Types, regions, images, referenced SSH keys as needed | Resolve one compatible shape within config limits | Create one VM |
+| `stop ID` | Current VM | Stable state check and confirmation | Graceful shutdown |
+| `start ID` | Current VM | Stable state check | Power on |
+| `delete ID` | Current VM and resource references as available | Confirm exact target and deletion scope | Ordinary single-VM delete |
+| `catalog ...` | Relevant paginated catalog | Normalize/filter, optionally apply limits | None |
+| `config show/check` | Optional config file | Decode and merge defaults | None |
+| `version` | Build metadata | Render | None |
+
+Only creation requires sizing policy and catalog compatibility. Other mutations require
+current VM state, never a catalog lookup or an ownership label. Config's size ceilings
+cannot block discovery or lifecycle actions on larger existing machines.
+
+## Modules
+
+| Module | Responsibility |
+| --- | --- |
+| `cli/` | Parse commands, provider selection, prompts, stdout envelope, stderr diagnostics, exit codes. |
+| `config/` | Read optional TOML, merge defaults, validate finite positive limits, resolve token env names. |
+| `domain/` | VM identity, normalized VM/catalog models, command requests/results, typed errors. |
+| `policy/` | Pure creation validation and deterministic type selection. |
+| `commands/` | Per-command orchestration: live reads, pure decisions, confirmation, mutation, optional wait. |
+| `providers/port.ts` | Small typed API for inventory, detail, catalog, creation, lifecycle actions, and action status. |
+| `providers/hetzner/` | Direct HTTP adapter and provider response schemas. |
+| `providers/digitalocean/` | Direct HTTP adapter and provider response schemas. |
+| `providers/fake/` | In-memory implementation with seeded fixtures for tests. |
+| `http/` | Authentication, redaction, bounded read retries, pagination, request timeouts. |
+| `wait/` | Bounded polling of action status and resulting VM state. |
+
+<!-- draw-visual: diagrams/architecture-modules-commands.mmd -->
+```text
+┌──────────────────────────┐   ┌──────────────┐   ┌─────────────────┐
+│        cli/ [io]         ├──►│commands/ [io]├──►│    wait/ [io]   │
+└──────────────────────────┘   └───────┬──────┘   └────────┬────────┘
+                                       │                   ▼
+┌──────────────────────────┐           │          ┌─────────────────┐
+│domain/ [pure] used by all│           ├─────────►│providers/port.ts│
+└──────────────────────────┘           │          └─────────────────┘
+                                       │
+                                       │          ┌─────────────────┐
+                                       ├─────────►│   config/ [io]  │
+                                       │          └─────────────────┘
+                                       │
+                                       │          ┌─────────────────┐
+                                       └─────────►│  policy/ [pure] │
+                                                  └─────────────────┘
+```
+
+<!-- draw-visual: diagrams/architecture-modules-providers.mmd -->
+```text
+┌─────────────────┐       ┌────────────────────────────┐  ┌──────────┐
+│providers/port.ts├─impl─►│  providers/hetzner/ [io]   ├─►│http/ [io]│
+└────────┬────────┘       └────────────────────────────┘  └──────────┘
+         │                                                      ▲
+         │                ┌────────────────────────────┐        │
+         ├──────────impl─►│providers/digitalocean/ [io]├────────┘
+         │                └────────────────────────────┘
+         │
+         │                ┌────────────────────────────┐
+         └──────────impl─►│   providers/fake/ [pure]   │
+                          └────────────────────────────┘
+```
+
+Plain arrows mean "depends on". The `impl` arrows point from the port to the modules that
+implement it.
+
+Creation needs no separate planner and executor. The resolver returns a validated
+`ResolvedCreate`; the adapter encodes it once, and that encoded payload is both the redacted
+dry-run preview and the request sent in a real invocation. Lifecycle previews describe the
+action on the fetched VM. Previews live only in memory.
+
+## Provider port and models
+
+Use Effect services and Layers for the provider, config, HTTP client, confirmation, and
+clock. Pure functions operate on decoded values. Production selects one real adapter per
+provider; tests substitute a fake provider, fake confirmation, and TestClock.
+
+| Service | Production Layer | Test Layer |
 | --- | --- | --- |
-| I1 | **One VM per invocation by default.** Creating more requires `limits.maxCount > 1` in config *and* an explicit `--count`. Both are capped by a compiled-in hard bound. | Policy engine, `Count` branded type |
-| I2 | **No unbounded loops.** Every retry, poll and pagination uses a finite `Schedule` (attempt count *and* wall-clock cap). There is no `while (true)`, `Effect.forever`, or unbounded `Effect.repeat` in the codebase. | `Bounded` schedules module, lint rule, review |
-| I3 | **Hard upper bounds on resources:** vCPU, memory, disk, TTL, count, and total live vm-maker VMs per provider. | `Limits` schema; policy engine |
-| I4 | **Policies never produce an invalid or incompatible config.** A plan is built only from a provider *catalog* (types × regions × images × arch) and is checked again before execution. | Policy engine is total: `Spec → Plan \| PolicyViolation[]` |
-| I5 | **Nothing is sent before validation.** All parsing and policy checks happen before the first mutating API call. `--dry-run` prints exactly the requests that would be sent. | Planner/Executor split |
-| I6 | **No duplicate creation on retry.** Each create carries a `vm-maker/request-id` label; the executor checks for it before retrying a create. | Executor |
-| I7 | **Provider state is the source of truth.** There is no local database to drift. Ownership, TTL and spec hashes live in provider labels/tags. | Label codec |
+| Provider port | Hetzner or DigitalOcean adapter | fake provider |
+| HttpClient | live client | unused by the fake |
+| Config | optional TOML merged with defaults | same decoder over test values |
+| Confirmation | TTY prompt | fake confirmation |
+| Clock | live clock | TestClock |
 
-## Module overview
+The port offers these operations:
 
-<!-- draw-visual: diagrams/architecture-module-create.mmd -->
 ```text
-┌──────────────┐  ┌────────────┐  ┌────────────────┐
-│   cli [io]   │  │catalog [io]│  │cloudinit [pure]│
-└───────┬──────┘  └──────┬─────┘  └────────┬───────┘
-        ▼                │                 │
-┌──────────────┐         │                 │
-│config [pure] │         │                 │
-└───────┬──────┘         │                 │
-        ▼                │                 │
-┌──────────────┐         │                 │
-│policy [pure] │◄────────┘        ┌────────┘
-└───────┬──────┘                  │
-        ▼                         │
-┌──────────────┐                  │
-│planner [pure]│◄─────────────────┘
-└───────┬──────┘
-        ▼
-┌──────────────┐
-│executor [io] │
-└──────────────┘
+listVms(query) -> Inventory          # rows plus incomplete-read flag
+getVm(id) -> Vm
+getCatalog(query) -> Catalog
+createVm(resolvedCreate) -> MutationReceipt
+shutdownVm(id) -> MutationReceipt
+powerOnVm(id) -> MutationReceipt
+deleteVm(id) -> MutationReceipt
+getAction(id) -> ActionStatus        # if provider gives an action ID
 ```
 
-<!-- draw-visual: diagrams/architecture-module-reap.mmd -->
-```text
-┌────────────────────────────┐   ┌──────────────┐   ┌─────────────┐
-│        reaper [io]         ├──►│planner [pure]├──►│executor [io]│
-└────────────────────────────┘   └──────────────┘   └─────────────┘
+`Vm` includes provider, opaque ID, name, type, region, normalized status, raw provider status,
+RAM, bundled disk, addresses, image/creation time when available, native metadata, and attached
+resource references when available. Normalize status to `running`, `off`, `transitioning`,
+or `unknown`; retain the raw status to avoid losing provider distinctions.
 
-┌────────────────────────────┐
-│domain [pure], shared by all│
-└────────────────────────────┘
+`MutationReceipt` includes provider, VM ID when known, action ID when available, and an
+accepted/completed indication. Polling checks the action and the resulting VM condition;
+deletion completes when the VM is confirmed absent. A receipt is command output, not local
+state. A subsequent `show` reads the provider afresh.
+
+Adapters retain native labels/tags as metadata. They do not require managed labels, infer
+identity from names, or automatically add metadata. The ordinary VM deletion endpoint keeps
+each provider's own associated-resource behavior; recursively deleting independent resources
+is outside the port. Show resource references so users can inspect anything that remains.
+
+Provider API references: [Hetzner Cloud](https://docs.hetzner.cloud/reference/cloud) and
+[DigitalOcean Droplets](https://docs.digitalocean.com/products/droplets/reference/api/droplets/).
+
+## Creation policy
+
+Default configuration:
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `maxVcpu` | 8 | Maximum selected type's vCPU count. |
+| `maxMemoryGb` | 8 | Maximum selected type's plan RAM. |
+| `maxDiskGb` | 128 | Maximum selected type's bundled root storage. |
+
+These are positive finite config values, raised by editing config rather than rebuilding.
+There are no compiled-in RAM or disk caps.
+
+Creation follows this sequence:
+
+1. Decode flags and config; reject malformed input and requested minimums above limits.
+2. Fetch the current catalog and resolve provider defaults for region, image, and SSH keys.
+3. Filter types to those available in the region and compatible with the image architecture.
+   An explicit type must be in that set. For resource minimums, pick the smallest candidate
+   that meets them, ordered by RAM, vCPU, disk, then type ID.
+4. Validate the selected type's RAM, vCPU, and bundled disk against ceilings. Disk is checked
+   even when no storage minimum was supplied. Never attach a volume to satisfy a storage
+   minimum.
+5. Read optional user-data, validate provider byte limits, and encode one creation payload.
+6. For dry-run, return the redacted preview. Otherwise submit once and return the receipt;
+   optionally wait for provider completion within the deadline.
+
+<!-- draw-visual: diagrams/architecture-create-flow.mmd -->
+```text
+  ┌─────┐     ┌──────────┐     ┌────────┐     ┌──────┐     ┌──────┐
+  │ cli │     │ commands │     │ policy │     │ port │     │ wait │
+  └──┬──┘     └─────┬────┘     └────┬───┘     └───┬──┘     └───┬──┘
+     │              │               │             │            │
+     │ 1. decoded request           │             │            │
+     ├─────────────►│               │             │            │
+     │              │               │             │            │
+    ┌────────────────┐              │             │            │
+    │ flags + config │              │             │            │
+    └────────────────┘              │             │            │
+     │              │               │             │            │
+     │              │ 2. getCatalog │             │            │
+     │              ├────────────────────────────►│            │
+     │              │               │             │            │
+     │              │ 3. catalog, defaults        │            │
+     │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤            │
+     │              │               │             │            │
+     │              │ 4. resolve type             │            │
+     │              ├──────────────►│             │            │
+     │              │               │             │            │
+     │              │ 5. smallest fit             │            │
+     │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤             │            │
+     │              │               │             │            │
+     │              │ 6. check ceilings           │            │
+     │              ├──────────────►│             │            │
+     │              │               │             │            │
+     │              │ 7. ResolvedCreate           │            │
+     │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤             │            │
+     │              │               │             │            │
+     │             ┌───────────────────────────────┐           │
+     │             │  adapter encodes one payload  │           │
+     │             └───────────────────────────────┘           │
+ ┌─[alt dry-run]───────────────────────────────────────────────────┐
+ │   │              │               │             │            │   │
+ │   │ 8. redacted preview          │             │            │   │
+ │   │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤               │             │            │   │
+ │   │              │               │             │            │   │
+ │  ┌────────────────┐              │             │            │   │
+ │  │  no mutation   │              │             │            │   │
+ │  └────────────────┘              │             │            │   │
+ ├┈[submit]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤
+ │   │              │               │             │            │   │
+ │   │              │ 9. createVm   │             │            │   │
+ │   │              ├────────────────────────────►│            │   │
+ │   │              │               │             │            │   │
+ │   │              │ 10. MutationReceipt         │            │   │
+ │   │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤            │   │
+ │   │            ┌─[opt --wait]─────────────────────────────────┐ │
+ │   │            │ │               │             │            │ │ │
+ │   │            │ │ 11. poll, deadline          │            │ │ │
+ │   │            │ ├─────────────────────────────────────────►│ │ │
+ │   │            │ │               │             │            │ │ │
+ │   │            │ │ 12. completed │             │            │ │ │
+ │   │            │ │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤ │ │
+ │   │            │ │               │             │            │ │ │
+ │   │            └──────────────────────────────────────────────┘ │
+ │   │              │               │             │            │   │
+ │   │ 13. receipt  │               │             │            │   │
+ │   │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤               │             │            │   │
+ │   │              │               │             │            │   │
+ └─────────────────────────────────────────────────────────────────┘
+     │              │               │             │            │
 ```
 
-<!-- draw-visual: diagrams/architecture-module-port.mmd -->
+Unit conventions match [CLI limits](cli.md#limits-and-optional-configuration): normalize
+DigitalOcean MiB RAM by dividing by 1024, use Hetzner's GB RAM, and use advertised GB for disk.
+Provider fixtures keep raw values. Guest free space is not part of capacity validation.
+
+No account-wide VM count is inferred from inventory. One invocation creates one VM;
+concurrent invocations and external scripts are outside any global count guarantee.
+
+## Lifecycle operations
+
+For each explicit `(provider, ID)`, fetch current detail. Missing IDs map to `NotFound`.
+Dry-run returns the action preview without prompting or mutating. Stop/delete request
+confirmation of provider, ID, name, and action unless `--yes` is present. Re-fetch after a
+prompt before sending and refuse if relevant state changed. This reduces stale decisions
+without pretending that reads and writes form an atomic transaction.
+
+<!-- draw-visual: diagrams/architecture-lifecycle-mutation.mmd -->
 ```text
-┌────────┐   ┌─────────────┐   ┌─────────────────────┐
-│executor├──►│Provider port├──►│   hetzner + labels  │
-└────────┘   └──────┬──────┘   └─────────────────────┘
+  ┌─────┐     ┌──────────┐     ┌──────────────┐     ┌──────┐
+  │ cli │     │ commands │     │ confirmation │     │ port │
+  └──┬──┘     └─────┬────┘     └───────┬──────┘     └───┬──┘
+     │              │                  │                │
+     │ 1. stop or delete ID            │                │
+     ├─────────────►│                  │                │
+     │              │                  │                │
+     │              │ 2. getVm         │                │
+     │              ├──────────────────────────────────►│
+     │              │                  │                │
+     │              │ 3. Vm / NotFound │                │
+     │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤
+ ┌─[alt dry-run]────────────────────────────────────────────┐
+ │   │              │                  │                │   │
+ │   │ 4. action preview               │                │   │
+ │   │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤                  │                │   │
+ ├┈[act]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤
+ │   │            ┌─[opt no --yes]────────────────────────┐ │
+ │   │            │ │                  │                │ │ │
+ │   │            │ │ 5. provider, ID, name, action     │ │ │
+ │   │            │ ├─────────────────►│                │ │ │
+ │   │            │ │                  │                │ │ │
+ │   │            │ │ 6. confirmed     │                │ │ │
+ │   │            │ │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤                │ │ │
+ │   │            │ │                  │                │ │ │
+ │   │            └───────────────────────────────────────┘ │
+ │   │              │                  │                │   │
+ │   │              │ 7. getVm again   │                │   │
+ │   │              ├──────────────────────────────────►│   │
+ │   │              │                  │                │   │
+ │   │              │ 8. current Vm    │                │   │
+ │   │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤   │
+ │ ┌─[alt state changed]──────────────────────────────────┐ │
+ │ │ │              │                  │                │ │ │
+ │ │ │ 9. Conflict  │                  │                │ │ │
+ │ │ │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤                  │                │ │ │
+ │ ├┈[unchanged]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤ │
+ │ │ │              │                  │                │ │ │
+ │ │ │              │ 10. shutdownVm or deleteVm        │ │ │
+ │ │ │              ├──────────────────────────────────►│ │ │
+ │ │ │              │                  │                │ │ │
+ │ │ │              │ 11. MutationReceipt               │ │ │
+ │ │ │              │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤ │ │
+ │ │ │              │                  │                │ │ │
+ │ │ │ 12. receipt  │                  │                │ │ │
+ │ │ │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤                  │                │ │ │
+ │ │ │              │                  │                │ │ │
+ │ └──────────────────────────────────────────────────────┘ │
+ │   │              │                  │                │   │
+ └──────────────────────────────────────────────────────────┘
+     │              │                  │                │
+```
+
+Start on a running VM and stop on an off VM succeed without a mutation. A transitioning or
+unknown power state is refused as a conflict. Stop requests graceful shutdown only; no hidden
+fallback to hard power-off. Delete uses exactly one ID and never a tag/name selector.
+
+Stop preserves the disk but not running processes or memory, and VM billing continues on both
+providers. Sources: [Hetzner billing FAQ](https://docs.hetzner.com/cloud/billing/faq/) and
+[DigitalOcean pricing](https://docs.digitalocean.com/products/droplets/details/pricing/).
+Delete releases the VM; independent resources can remain billable according to provider rules.
+
+## HTTP bounds and ambiguous outcomes
+
+Every HTTP request has a 30-second timeout. Read-only requests may retry twice with bounded
+backoff inside a 90-second total budget; respect rate-limit hints only within that budget.
+Pagination has a 100-page and 3-minute limit per provider and rejects repeated cursors.
+Reaching a bound returns an explicit incomplete result. These operational bounds are
+centralized constants, independent of the sizing limits in config.
+
+Mutations are sent once: there is no blind retry of a create or lifecycle request. A lost
+response may mean the provider accepted the request. Return a typed `OutcomeUnknown` error
+(exit 5), retain any known IDs, and direct the user to `list`/`show` before trying again.
+Neither provider offers a create idempotency guarantee, and names or labels cannot establish
+one, so a second invocation after a lost response can create a second VM.
+
+<!-- draw-visual: diagrams/architecture-outcome-unknown.mmd -->
+```text
+┌──────────────────────────────────────┐
+│          Mutation sent once          │
+└───────────────────┬──────────────────┘
+                    ▼
+┌──────────────────────────────────────┐
+│            Response lost             │
+└───────────────────┬──────────────────┘
+                    ▼
+┌──────────────────────────────────────┐
+│OutcomeUnknown, exit 5, known IDs kept│
+└───────────────────┬──────────────────┘
+                    ▼
+┌──────────────────────────────────────┐
+│        User runs list or show        │
+└───────────────────┬──────────────────┘
                     │
-                    │          ┌─────────────────────┐
-                    ├─────────►│digitalocean + labels│
-                    │          └─────────────────────┘
-                    │
-                    │          ┌─────────────────────┐
-                    └─────────►│   fake, in-memory   │
-                               └─────────────────────┘
+                    ├─────────────────────────────────┐
+                    │                                 │
+                 exists                            absent
+                    │                                 │
+                    ▼                                 ▼
+┌──────────────────────────────────────┐    ┌──────────────────┐
+│           Keep existing VM           │    │Retry the mutation│
+└──────────────────────────────────────┘    └──────────────────┘
 ```
 
-<!-- draw-visual: diagrams/architecture-module-http.mmd -->
-```text
-┌─────────────────────┐             ┌───────────┐
-│   hetzner + labels  ├─HttpClient─►│Hetzner API│
-└─────────────────────┘             └───────────┘
+`--wait` uses a finite Effect Schedule with a default 3-minute deadline, a configurable
+`--timeout` up to 10 minutes, and a finite maximum number of polls. Poll errors consume the
+same deadline. Failure or timeout does not trigger deletion, resubmission, or rollback.
+An accepted VM remains discoverable through provider inventory even if this process exits.
 
-┌─────────────────────┐             ┌───────────┐
-│digitalocean + labels├─HttpClient─►│   DO API  │
-└─────────────────────┘             └───────────┘
-```
+`list --provider all` performs the two independent reads and reports each outcome. One
+failure cannot hide the other provider's results or produce a successful empty inventory.
+Credentials are read only for selected providers and never printed.
 
-The code is organised as *ports and adapters*. Everything left of the `Provider` port is pure or
-depends only on Effect services, so it can be tested without a network.
+## Errors and verification
 
-| Module | Responsibility | Pure? |
-| --- | --- | --- |
-| `cli/` | Parse argv with `effect/cli`, render output (human table or `--output json`), map errors to exit codes. | no (I/O edge) |
-| `config/` | Load `vm-maker.config.{yaml,json}` + env vars, decode with Schema, merge with defaults, reject any value above a hard cap (exit 2). | yes after read |
-| `domain/` | Branded types and schemas: `VmSpec`, `ResourceSpec`, `Ttl`, `Count`, `Region`, `Limits`, `Plan`, error ADTs. | yes |
-| `catalog/` | Fetches and caches each provider's server types, locations, images and prices, normalised to one `Catalog` shape. | port + adapters |
-| `policy/` | `resolve(spec, catalog, limits, liveCount) → Either<PolicyViolation[], ResolvedSpec>`. Picks the smallest compatible server type for a resource spec. | **yes** |
-| `cloudinit/` | Render templates into `#cloud-config` user-data, validate shape and provider size limits, inject vm-maker metadata. | yes |
-| `planner/` | Turn a `ResolvedSpec` into a `Plan`: an ordered, finite list of `ProviderRequest`s. | yes |
-| `executor/` | Run a plan against the `Provider` port with bounded retry/poll, idempotency checks and structured logs. | effectful |
-| `providers/` | `hetzner/`, `digitalocean/`, `fake/`. Each implements `Provider` and `CatalogSource` over `effect/http` `HttpClient`. | adapters |
-| `reaper/` | `reap`: list vm-maker-owned VMs, select those past `expires-at`, plan bounded deletes. | planner is pure |
-| `labels/` | Encode/decode vm-maker metadata to provider labels (Hetzner) and tags (DigitalOcean, which only has flat tags). | yes |
-
-## Effect service graph
-
-Each boundary is an Effect service (`Context.Tag`) provided by a `Layer`. The production and test
-programs differ only in which layers they provide:
-
-<!-- draw-visual: diagrams/architecture-layers-requires.mmd -->
-```text
-┌───────────────────────┐
-│createVm(args) requires├──┬──────┐
-└───────────┬───────────┘  └──────┼─────────────┬────────┐
-            ▼                     ▼             ▼        ▼
-┌───────────────────────┐  ┌─────────────┐  ┌──────┐  ┌─────┐
-│        Provider       │  │CatalogSource│  │Config│  │Clock│
-└───────────────────────┘  └─────────────┘  └──────┘  └─────┘
-```
-
-<!-- draw-visual: diagrams/architecture-layers-prod.mmd -->
-```text
-┌───────────────────────┐
-│    production Layer   ├───────────────┐
-└───────────┬───────────┘               │
-            ▼                           ▼
-┌───────────────────────┐   ┌───────────────────────┐
-│      HetznerLive      │   │    DigitalOceanLive   │
-└───────────┬───────────┘   └───────────┬───────────┘
-            ▼                           ▼
-┌───────────────────────┐   ┌───────────────────────┐
-│live HttpClient + Clock│   │live HttpClient + Clock│
-└───────────────────────┘   └───────────────────────┘
-```
-
-<!-- draw-visual: diagrams/architecture-layers-test.mmd -->
-```text
-┌─────────────────────┐
-│      test Layer     │
-└──────────┬──────────┘
-           │
-           ├───────────────────────┐
-           │                       │
-         unit                  contract
-           │                       │
-           ▼                       ▼
-┌─────────────────────┐   ┌─────────────────┐
-│   FakeProviderTest  │   │ RecordedHttpTest│
-└──────────┬──────────┘   └────────┬────────┘
-           ▼                       ▼
-┌─────────────────────┐   ┌─────────────────┐
-│in-memory + TestClock│   │HttpClient replay│
-└─────────────────────┘   └─────────────────┘
-```
-
-```ts
-// The same program runs everywhere; only the Layer differs.
-const program = createVm(args) // Effect<VmCreated, CreateError, Provider | Catalog | Config | Clock>
-
-program.pipe(Effect.provide(HetznerLive))      // production
-program.pipe(Effect.provide(FakeProviderTest)) // unit + property tests
-program.pipe(Effect.provide(RecordedHttpTest)) // contract tests against recorded API fixtures
-```
-
-`Clock` comes from Effect's `TestClock` in tests, so TTL expiry and polling timeouts are
-deterministic and instant.
-
-## Creating a VM
-
-<!-- draw-visual: diagrams/architecture-create-validate.mmd -->
-```text
-┌──────┐     ┌─────┐     ┌────────┐     ┌─────────┐     ┌────────┐
-│ User │     │ CLI │     │ Config │     │ Catalog │     │ Policy │
-└───┬──┘     └──┬──┘     └────┬───┘     └────┬────┘     └────┬───┘
-    │           │             │              │               │
-    │ 1. create │             │              │               │
-    ├──────────►│             │              │               │
-    │           │             │              │               │
-    │           │ 2. decode   │              │               │
-    │           ├────────────►│              │               │
-    │           │             │              │               │
-    │           │ 3. VmSpec   │              │               │
-    │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┤              │               │
-    │           │             │              │               │
-    │           │ 4. fetch    │              │               │
-    │           ├───────────────────────────►│               │
-    │           │             │              │               │
-    │           │             ┌──────────────────────────────┐
-    │           │             │ GET types, locations, images │
-    │           │             └──────────────────────────────┘
-    │           │             │              │               │
-    │           │             │      ┌────────────────┐      │
-    │           │             │      │ count live VMs │      │
-    │           │             │      └────────────────┘      │
-    │           │             │              │               │
-    │           │ 5. Catalog, live count     │               │
-    │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤               │
-    │           │             │              │               │
-    │           │ 6. resolve  │              │               │
-    │           ├───────────────────────────────────────────►│
-    │           │             │              │               │
-    │           │             │              │            ┌──────┐
-    │           │             │              │            │ pure │
-    │           │             │              │            └──────┘
-  ┌─[alt violations]───────────────────────────────────────────┐
-  │ │           │             │              │               │ │
-  │ │           │ 7. PolicyViolation[]       │               │ │
-  │ │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤ │
-  │ │           │             │              │               │ │
-  │ │ 8. exit 3 │             │              │               │ │
-  │ │◄┈┈┈┈┈┈┈┈┈┈┤             │              │               │ │
-  ├┈[ok]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤
-  │ │           │             │              │               │ │
-  │ │           │ 9. ResolvedSpec            │               │ │
-  │ │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤ │
-  │ │           │             │              │               │ │
-  └────────────────────────────────────────────────────────────┘
-    │           │             │              │               │
-```
-
-<!-- draw-visual: diagrams/architecture-create-plan.mmd -->
-```text
-┌──────┐     ┌─────┐     ┌─────────┐
-│ User │     │ CLI │     │ Planner │
-└───┬──┘     └──┬──┘     └────┬────┘
-    │           │             │
-    │           │ 1. ResolvedSpec
-    │           ├────────────►│
-    │           │             │
-    │           │ 2. Plan     │
-    │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┤
-  ┌─[opt dry-run]───────────────┐
-  │ │           │             │ │
-  │ │ 3. print plan, exit 0   │ │
-  │ │◄┈┈┈┈┈┈┈┈┈┈┤             │ │
-  │ │           │             │ │
-  └─────────────────────────────┘
-    │           │             │
-```
-
-<!-- draw-visual: diagrams/architecture-create-execute.mmd -->
-```text
-┌──────┐     ┌─────┐     ┌──────────┐     ┌──────────┐
-│ User │     │ CLI │     │ Executor │     │ Provider │
-└───┬──┘     └──┬──┘     └─────┬────┘     └─────┬────┘
-    │           │              │                │
-    │           │ 1. run Plan  │                │
-    │           ├─────────────►│                │
-    │           │              │                │
-    │           │              │ 2. request-id? │
-    │           │              ├───────────────►│
-    │           │              │                │
-    │           │             ┌──────────────────┐
-    │           │             │  skip if found   │
-    │           │             └──────────────────┘
-    │           │              │                │
-    │           │              │ 3. POST create │
-    │           │              ├───────────────►│
-    │           │              │                │
-    │           │             ┌───────────────────┐
-    │           │             │ labels, user-data │
-    │           │             └───────────────────┘
-    │           │            ┌─[loop every 2s, max 3m]─┐
-    │           │            │ │                │      │
-    │           │            │ │ 4. GET status  │      │
-    │           │            │ ├───────────────►│      │
-    │           │            │ │                │      │
-    │           │            └─────────────────────────┘
-  ┌─[alt running]─────────────────────────────────┐
-  │ │           │              │                │ │
-  │ │           │ 5. VmCreated │                │ │
-  │ │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤                │ │
-  │ │           │              │                │ │
-  │ │ 6. VM id, IP             │                │ │
-  │ │◄┈┈┈┈┈┈┈┈┈┈┤              │                │ │
-  ├┈[timeout]┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┤
-  │ │           │              │                │ │
-  │ │           │ 7. ProvisionTimeout           │ │
-  │ │           │◄┈┈┈┈┈┈┈┈┈┈┈┈┈┤                │ │
-  │ │           │              │                │ │
-  │ │ 8. VM id, exit 9         │                │ │
-  │ │◄┈┈┈┈┈┈┈┈┈┈┤              │                │ │
-  │ │           │              │                │ │
-  └───────────────────────────────────────────────┘
-    │           │              │                │
-```
-
-1. **Parse.** argv and config are decoded into a `VmSpec`. A malformed input fails with a
-   `DecodeError` naming the field. Nothing has touched the network yet.
-2. **Catalog.** The provider catalog is fetched (read-only, cached briefly) along with the count
-   of live vm-maker VMs.
-3. **Policy.** `policy.resolve` is a pure function that returns every violation, not just the
-   first, so the user fixes everything in one pass.
-4. **Plan.** The planner emits a finite `Plan`. `--dry-run` stops here and prints it.
-5. **Execute.** The executor sends the create request, then polls status on a bounded schedule
-   (for example, every 2 s for at most 3 min). If the deadline passes, it fails with
-   `ProvisionTimeout` and prints the VM id. It never deletes or retries on its own.
-
-### Policy pipeline
-
-<!-- draw-visual: diagrams/architecture-policy-pipeline.mmd -->
-```text
-┌──────────────────────────────────┐
-│            raw input             │
-└─────────────────┬────────────────┘
-                  ▼
-┌──────────────────────────────────┐
-│     decode to branded types      │
-└─────────────────┬────────────────┘
-                  │
-                  ├──────────────────────────────────────┐
-                  │                                      │
-                  │                                    fail
-                  │                                      │
-                  ▼                                      ▼
-┌──────────────────────────────────┐            ┌─────────────────┐
-│ limits: request <= config <= cap │            │   DecodeError   │
-└─────────────────┬────────────────┘            └─────────────────┘
-                  ▼
-┌──────────────────────────────────┐
-│     count check vs live VMs      │
-└─────────────────┬────────────────┘
-                  │
-                  ├──────────────────────────────────────┐
-                  │                                      │
-                  │                                    fail
-                  │                                      │
-                  ▼                                      ▼
-┌──────────────────────────────────┐            ┌─────────────────┐
-│catalog: type, region, image, arch│            │  LimitExceeded  │
-└─────────────────┬────────────────┘            └─────────────────┘
-                  │
-                  ├──────────────────────────────────────┐
-                  │                                      │
-                  │                                  violation
-                  │                                      │
-                  ▼                                      ▼
-┌──────────────────────────────────┐            ┌─────────────────┐
-│  select cheapest, ties by name   │            │PolicyViolation[]│
-└─────────────────┬────────────────┘            └─────────────────┘
-                  ▼                                      ▲
-┌──────────────────────────────────┐                     │
-│     cloud-init: schema, size     ├──────violation──────┘
-└─────────────────┬────────────────┘
-                  ▼
-┌──────────────────────────────────┐
-│           ResolvedSpec           │
-└──────────────────────────────────┘
-```
-
-The policy engine is the core of invariants I1, I3 and I4. Its rules:
-
-- **Parse, don't validate.** Values become branded types (`VCpu`, `MemoryGiB`, `Ttl`, `Count`) only
-  through smart constructors that enforce bounds, so an out-of-range value cannot be represented
-  past the edge.
-- **Catalog-driven compatibility.** "Valid" means *a tuple that exists in the catalog*:
-  `(serverType, location, image)` with matching architecture (x86 vs arm) and availability, not
-  "each field looks plausible".
-- **Deterministic selection.** A resource spec (`--cpu 2 --mem 4`) resolves to the cheapest type
-  satisfying all minimums. Ties break on name. The same inputs always produce the same plan.
-- **Limits are layered.** hard cap ≥ config limit ≥ request. Config may lower a cap but never
-  raise it: a config value above a hard cap fails config loading (exit 2) rather than being
-  silently clamped. A request above the config limit fails with `LimitExceeded` (exit 4).
-- **Total.** For every input the engine returns exactly one of `ResolvedSpec` or a non-empty
-  `PolicyViolation[]`. It never throws. This is stated as a fast-check property.
-
-Hard caps are compiled in. The first eight rows match [cli.md §0.2](cli.md#02-hard-caps-compiled-in-config-may-lower-them-never-raise-them),
-which is the user-facing contract; the last two are internal execution bounds.
-
-| Bound | Default config value | Hard cap |
-| --- | --- | --- |
-| VMs per invocation (`count`) | 1 | 5 |
-| vCPU per VM | 8 | 32 |
-| Memory per VM | 16 GB | 128 GB |
-| Disk per VM | 160 GB | 1000 GB |
-| TTL | 7d max (default TTL 8h) | 30d |
-| Active vm-maker VMs per provider | 5 | 20 |
-| Deletes per `reap` run | 10 | 20 |
-| HTTP retries per request | 2 | 3 |
-| Poll duration (`--wait`) | 3 min | 10 min |
-| Pages read per list call | 10 | 20 |
-
-## VM lifecycle and TTL
-
-<!-- draw-visual: diagrams/architecture-lifecycle-create.mmd -->
-```text
-┌────────────────────────┐
-│        Planned         │
-└────────────┬───────────┘
-             ▼
-┌────────────────────────┐
-│        Creating        │
-└────────────┬───────────┘
-             │
-             ├───────────────────────────┐
-             │                           │
-             │                       deadline
-             │                           │
-             ▼                           ▼
-┌────────────────────────┐          ┌────────┐
-│Running, has expires-at │◄────┐    │TimedOut│
-└────────────┬───────────┘     │    └────────┘
-             │                 │
-          extend            bounded
-             ▼                 │
-┌────────────────────────┐     │
-│Extended, new expires-at├─────┘
-└────────────────────────┘
-```
-
-<!-- draw-visual: diagrams/architecture-lifecycle-expire.mmd -->
-```text
-┌────────────────────────┐
-│        Running         ├────────delete──────────┐
-└────────────┬───────────┘                        │
-             │                                    │
-     now > expires-at                             │
-             ▼                                    ▼
-┌────────────────────────┐         ┌────────────────────────────┐
-│        Expired         ├──reap──►│Deleted, reap caps N per run│
-└────────────┬───────────┘         └────────────────────────────┘
-             │                                    ▲
-   optional in-VM timer                           │
-             ▼                                    │
-┌────────────────────────┐                        │
-│PoweredOff, still billed├─────────reap───────────┘
-└────────────────────────┘
-```
-
-The TTL is stored at creation as an absolute expiry in UTC epoch seconds: the label
-`vm-maker/expires-at=<epoch>` on Hetzner, and the tag `vm-maker:expires-at:<epoch>` on DigitalOcean,
-whose tags cannot contain `/` (see [cli.md §0.3](cli.md#03-ownership-and-ttl-labels)). vm-maker never
-touches a VM without its `managed` label or tag.
-Enforcement uses two mechanisms, neither of which loops:
-
-1. **`vm-maker reap`** lists owned VMs, selects the expired ones, and deletes at most
-   `limits.reapMax` of them per run. It is meant to run from cron or a systemd timer, so the
-   scheduling loop lives outside the tool. `reap --dry-run` lists what would be deleted.
-2. **In-VM fallback (optional).** cloud-init installs a systemd timer that powers the VM off at
-   `expires-at`. On both providers a powered-off VM **is still billed**, so this guards against a
-   forgotten workload, not cost. Deletion stays with `reap` so that no provider token ever lives
-   on the VM.
-
-`vm-maker extend <id> --ttl 2h` rewrites the label, bounded by the TTL ceiling measured from now.
-
-## cloud-init
-
-User-data is a first-class part of the spec, not an afterthought:
-
-- **Sources:** `--cloud-init file.yaml` or a named template (`--template docker-host`) from
-  `templates/`. Templates are typed functions `(vars) => CloudConfig`, not string interpolation.
-- **Validation before send:** the result must start with `#cloud-config`, decode against a
-  `CloudConfig` schema covering the subset we support (users, ssh keys, packages, write_files,
-  runcmd), and fit the provider's size limit (Hetzner 32 KiB, DigitalOcean 64 KiB).
-- **Injected metadata:** vm-maker appends its own `write_files` entry (`/etc/vm-maker.json` with
-  the request id, spec hash and expiry) and, if requested, the TTL power-off timer.
-- **Readiness:** `create --wait-ready` polls (bounded) for the VM to report that cloud-init
-  finished, over SSH with `cloud-init status --wait`, or via a phone-home URL later.
-- **Secrets:** rendered user-data is kept out of logs and `--dry-run` output unless `--show-secrets`
-  is passed. Provider metadata endpoints expose user-data to anything on the VM, so templates
-  should fetch secrets at boot rather than embed them.
-
-## Errors
-
-All failures are tagged errors (`Data.TaggedError`) in a closed union, so the CLI can map each one
-to a stable exit code and a single-line message, and tests can assert on the tag.
-
-<!-- draw-visual: diagrams/architecture-errors-union.mmd -->
-```text
-┌───────────┐   ┌────────────────────────┐
-│CreateError├──►│  DecodeError, exit 2   │
-└─────┬─────┘   └────────────────────────┘
-      │         ┌────────────────────────┐
-      ├────────►│PolicyViolation, exit 3 │
-      │         └────────────────────────┘
-      │         ┌────────────────────────┐
-      ├────────►│ LimitExceeded, exit 4  │
-      │         └────────────────────────┘
-      │         ┌────────────────────────┐
-      ├────────►│ ProviderError, exit 5  │
-      │         └────────────────────────┘
-      │         ┌────────────────────────┐
-      └────────►│ProvisionTimeout, exit 9│
-                └────────────────────────┘
-```
-
-<!-- draw-visual: diagrams/architecture-errors-policy.mmd -->
-```text
-┌───────────────┐   ┌───────────────────────┐
-│PolicyViolation├──►│IncompatibleCombination│
-└───────┬───────┘   └───────────────────────┘
-        │           ┌───────────────────────┐
-        ├──────────►│      OutOfBounds      │
-        │           └───────────────────────┘
-        │           ┌───────────────────────┐
-        ├──────────►│     UnknownRegion     │
-        │           └───────────────────────┘
-        │           ┌───────────────────────┐
-        ├──────────►│      UnknownType      │
-        │           └───────────────────────┘
-        │           ┌───────────────────────┐
-        └──────────►│      UnknownImage     │
-                    └───────────────────────┘
-```
-
-<!-- draw-visual: diagrams/architecture-errors-limit.mmd -->
-```text
-┌─────────────┐   ┌───────────┐
-│LimitExceeded├──►│ CountLimit│
-└──────┬──────┘   └───────────┘
-       │          ┌───────────┐
-       └─────────►│LiveVmQuota│
-                  └───────────┘
-```
+Error variants distinguish usage, incompatibility/state conflict, size limits, authentication,
+provider rejection, transport failure, unknown mutation outcome, incomplete inventory,
+not-found, aborted confirmation, and wait timeout. The CLI maps them to the stable exit codes
+in [cli.md](cli.md#shared-options-and-output). JSON stdout uses the same versioned envelope
+for text-equivalent successes, errors, and partial inventory.
 
 <!-- draw-visual: diagrams/architecture-errors-provider.mmd -->
 ```text
-┌─────────────┐   ┌───────────┐
-│ProviderError├──►│    Auth   │
-└──────┬──────┘   └───────────┘
-       │          ┌───────────┐
-       ├─────────►│RateLimited│
-       │          └───────────┘
-       │          ┌───────────┐
-       ├─────────►│  NotFound │
-       │          └───────────┘
-       │          ┌───────────┐
-       └─────────►│ServerError│
-                  └───────────┘
+┌──────────────────────┐   ┌───────────────────┐
+│Provider error, exit 5├──►│        Auth       │
+└───────────┬──────────┘   └───────────────────┘
+            │              ┌───────────────────┐
+            ├─────────────►│  ProviderRejected │
+            │              └───────────────────┘
+            │              ┌───────────────────┐
+            ├─────────────►│     Transport     │
+            │              └───────────────────┘
+            │              ┌───────────────────┐
+            ├─────────────►│   OutcomeUnknown  │
+            │              └───────────────────┘
+            │              ┌───────────────────┐
+            └─────────────►│IncompleteInventory│
+                           └───────────────────┘
 ```
 
-Exit codes are a public contract shared with [cli.md §0.4](cli.md#04-exit-codes-stable-documented-tested):
+Planned tests:
 
-| Exit | Name | Error family | Meaning |
-| --- | --- | --- | --- |
-| 0 | `OK` | — | success, including a dry run that would succeed |
-| 1 | `INTERNAL` | defect | a bug; never an expected failure |
-| 2 | `USAGE` | `DecodeError` | bad flags, config or cloud-init input, or a config value above a hard cap |
-| 3 | `INVALID` | `PolicyViolation` | well formed but not compatible (type × region × image × arch) |
-| 4 | `LIMIT` | `LimitExceeded` | count, size, TTL or active-VM cap would be exceeded |
-| 5 | `PROVIDER` | `ProviderError` | auth, rate limit or 5xx after bounded retries |
-| 6 | `NOT_FOUND` | `ProviderError.NotFound` | the VM does not exist, or is not managed by vm-maker |
-| 7 | `ABORTED` | `Aborted` | confirmation declined, or needed in a non-TTY without `--yes` |
-| 8 | `DRIFT` | `PlanDrift` | a saved plan no longer matches the catalog or inventory |
-| 9 | `TIMEOUT` | `ProvisionTimeout` | the VM exists but did not become ready before the `--wait` deadline |
+- Property tests: every resolved type is compatible, meets all requested minimums, respects
+  configured ceilings, and is deterministically selected. Include bundled disk over the cap
+  and config ceilings larger than defaults.
+- Command tests: seeded unlabelled VMs are visible and actionable; duplicate names cannot
+  redirect an ID target; larger VMs can be inspected/stopped/started/deleted; dry-run sends
+  zero mutations; one create submits one request.
+- Failure tests: confirmation cancellation, state changes during prompts, missing IDs,
+  transitional states, lost mutation responses without retries, bounded pagination/polling,
+  and partial multi-provider inventory.
+- Adapter contract tests: scrubbed real response fixtures verify request encoding, unit
+  normalization, native metadata, action receipts, and provider error decoding.
+- Opt-in live smoke tests: create one small VM and explicitly delete it in cleanup. No default
+  test contacts a cloud provider. Cleanup failures report IDs for manual deletion; no TTL
+  or reaper is assumed.
 
-## Testing strategy
+The fake provider is internal test infrastructure, not a public CLI mode, and needs no state
+file. Tests seed its inventory directly, including externally created VMs, then exercise the
+same command services as production.
 
-Testing is a first-class property of the design, not a later phase. The architecture already does
-most of the work: a pure core, service ports, `TestClock`, and a fake provider.
-
-<!-- draw-visual: diagrams/architecture-testing-fast.mmd -->
-```text
-┌───────────┐   ┌─────────────────┐   ┌───────────────────┐
-│default run├──►│  most: property ├──►│pure core, no Layer│
-└─────┬─────┘   └─────────────────┘   └───────────────────┘
-      │         ┌─────────────────┐   ┌───────────────────┐
-      ├────────►│many: model-based├──►│ fc.commands + fake│
-      │         └─────────────────┘   └───────────────────┘
-      │         ┌─────────────────┐   ┌───────────────────┐
-      └────────►│       unit      ├──►│    core + fake    │
-                └─────────────────┘   └───────────────────┘
-```
-
-<!-- draw-visual: diagrams/architecture-testing-slow.mmd -->
-```text
-┌─────┐   ┌───────────────┐   ┌─────────────────┐
-│edges├──►│    contract   ├──►│recorded fixtures│
-└──┬──┘   └───────────────┘   └─────────────────┘
-   │      ┌───────────────┐   ┌─────────────────┐
-   └─────►│few: live smoke├──►│ VM_MAKER_LIVE=1 │
-          └───────────────┘   └─────────────────┘
-```
-
-| Layer | Tool | What it proves |
-| --- | --- | --- |
-| **Property tests** (most tests) | fast-check | Policy totality; every `ResolvedSpec` satisfies all bounds and exists in the catalog; selection is deterministic and minimal; label encode/decode round-trips; cloud-init renders stay under size limits. |
-| **Model-based tests** | `fc.commands` + fake provider | Random sequences of create/extend/delete/reap never exceed live-VM limits, never leave orphans, and reap removes exactly the expired set. |
-| **Unit tests** | `Deno.test` + `@std/assert` | Specific edge cases and regressions, each pinned with the fast-check seed that found it. |
-| **Contract tests** | recorded HTTP fixtures | Adapters encode requests and decode real response shapes (including error bodies) correctly. Fixtures are scrubbed of tokens and ids. |
-| **Live smoke tests** | opt-in: `VM_MAKER_LIVE=1` | Create the smallest VM with a 10 min TTL, wait for cloud-init, delete. A `finally` reap deletes anything left by a failed run. Never runs in default `deno test`. |
-
-Generators live next to the schemas they produce (`domain/arbitraries.ts`), so each new field gets
-an arbitrary in the same change. `deno task test` runs everything except live tests in seconds.
-
-## Proposed layout
+## Proposed layout and implementation order
 
 ```text
 src/
-  main.ts               # wires layers, runs the CLI
-  cli/                  # effect/cli commands, output, exit codes
-  config/               # config schema, loader, ceilings
-  domain/               # branded types, schemas, errors, arbitraries
-  policy/               # pure resolve()
-  planner/              # pure plan()
-  executor/             # bounded execution
-  cloudinit/            # templates, renderer, validator
-  labels/               # provider label/tag codec
-  reaper/
+  main.ts
+  cli/
+  config/
+  domain/
+  policy/
+  commands/
   providers/
-    port.ts             # Provider + CatalogSource services
-    hetzner/            # HTTP adapter + response schemas
+    port.ts
+    hetzner/
     digitalocean/
-    fake/               # in-memory provider used by tests
-templates/              # cloud-init templates
-test/fixtures/          # recorded provider responses
+    fake/
+  http/
+  wait/
+test/fixtures/
 ```
 
-## Technology decisions
+Use Deno, TypeScript, Effect services and Schema, and fast-check. Call provider HTTP APIs
+directly. Config is TOML. No local storage layer is needed; Deno permissions cover the
+selected API hosts, token environment variables, the optional config file, and explicitly
+supplied user-data files.
 
-| Concern | Choice | Why |
-| --- | --- | --- |
-| Runtime | Deno 2 | Built-in TS, test runner, fmt/lint, permissions (`--allow-net=api.hetzner.cloud,api.digitalocean.com`) and `deno compile` to a single binary. |
-| Effects, errors, DI | `effect` 4 | Typed errors, `Layer`-based dependency injection, `Schedule` for bounded retries, `TestClock`. |
-| CLI parsing | `effect/cli` | Part of the `effect` package since v4; typed options, generated help. |
-| HTTP | `effect/http` `HttpClient` (part of `effect` since v4) | Composable retries and timeouts; easy to swap for recorded fixtures. |
-| Schemas | **Effect Schema** (recommended) over zod | Already part of `effect`; decodes straight into branded types, and `effect/JsonSchema` can export the config schema for editor completion, which removes the main reason to add zod. Effect 4 no longer bundles fast-check, and its own `Arbitrary` module is marked unstable, so generators are written with fast-check directly next to each schema. |
-| Property testing | `fast-check` | Generators, shrinking, model-based testing, reproducible seeds. |
-
-## Open questions
-
-- Should `reap` also run opportunistically at the start of `create` (bounded, opt-in)?
-- Provider token storage: env vars only, or also the OS keyring?
-- Should SSH keys be uploaded per VM or referenced by name from the provider account?
-- Do we need a `snapshot` verb in v1, or only CRUD?
+Implement list/show and catalog reads first so any existing lab VM is usable immediately.
+Then implement one-ID stop/start/delete with confirmation and bounded waiting. Add create
+with configurable sizing policy and user-data. Build both adapters against the same contract
+and keep README status aligned with what actually runs. Future resize or configuration-edit
+commands can reuse the live-read model without introducing a state database.

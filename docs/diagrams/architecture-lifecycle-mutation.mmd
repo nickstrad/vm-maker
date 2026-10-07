@@ -1,0 +1,27 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant CLI as cli
+  participant CMD as commands
+  participant CF as confirmation
+  participant PORT as port
+  CLI->>CMD: stop or delete ID
+  CMD->>PORT: getVm
+  PORT-->>CMD: Vm / NotFound
+  alt dry-run
+    CMD-->>CLI: action preview
+  else act
+    opt no --yes
+      CMD->>CF: provider, ID, name, action
+      CF-->>CMD: confirmed
+    end
+    CMD->>PORT: getVm again
+    PORT-->>CMD: current Vm
+    alt state changed
+      CMD-->>CLI: Conflict
+    else unchanged
+      CMD->>PORT: shutdownVm or deleteVm
+      PORT-->>CMD: MutationReceipt
+      CMD-->>CLI: receipt
+    end
+  end

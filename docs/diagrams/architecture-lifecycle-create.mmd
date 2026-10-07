@@ -1,7 +1,0 @@
-%% draw-visual: -x 3 -y 1 -p 0
-graph TD
-  PL["Planned"] --> CR["Creating"]
-  CR --> RUN["Running, has expires-at"]
-  RUN -->|extend| EXT["Extended, new expires-at"]
-  EXT -->|bounded| RUN
-  CR -->|deadline| TO["TimedOut"]

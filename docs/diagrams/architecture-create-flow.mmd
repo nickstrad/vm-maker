@@ -1,0 +1,29 @@
+%% draw-visual:
+sequenceDiagram
+  autonumber
+  participant CLI as cli
+  participant CMD as commands
+  participant POL as policy
+  participant PORT as port
+  participant W as wait
+  CLI->>CMD: decoded request
+  Note over CLI,CMD: flags + config
+  CMD->>PORT: getCatalog
+  PORT-->>CMD: catalog, defaults
+  CMD->>POL: resolve type
+  POL-->>CMD: smallest fit
+  CMD->>POL: check ceilings
+  POL-->>CMD: ResolvedCreate
+  Note over CMD,PORT: adapter encodes one payload
+  alt dry-run
+    CMD-->>CLI: redacted preview
+    Note over CLI,CMD: no mutation
+  else submit
+    CMD->>PORT: createVm
+    PORT-->>CMD: MutationReceipt
+    opt --wait
+      CMD->>W: poll, deadline
+      W-->>CMD: completed
+    end
+    CMD-->>CLI: receipt
+  end

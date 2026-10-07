@@ -1,0 +1,7 @@
+%% draw-visual: -x 2 -y 1 -p 0
+graph LR
+  PRT["providers/port.ts"] -->|impl| HZ["providers/hetzner/ [io]"]
+  HZ --> HTTP["http/ [io]"]
+  PRT -->|impl| DO["providers/digitalocean/ [io]"]
+  DO --> HTTP
+  PRT -->|impl| FK["providers/fake/ [pure]"]

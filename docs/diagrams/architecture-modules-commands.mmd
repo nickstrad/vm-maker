@@ -1,0 +1,9 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph LR
+  CLI["cli/ [io]"] --> CMD["commands/ [io]"]
+  CMD --> WT["wait/ [io]"]
+  WT --> PRT["providers/port.ts"]
+  CMD --> PRT
+  CMD --> CFG["config/ [io]"]
+  CMD --> POL["policy/ [pure]"]
+  DOM["domain/ [pure] used by all"]

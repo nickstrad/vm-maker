@@ -1,0 +1,7 @@
+%% draw-visual: -x 4 -y 1 -p 0
+graph TD
+  M["Mutation sent once"] --> L["Response lost"]
+  L --> O["OutcomeUnknown, exit 5, known IDs kept"]
+  O --> C["User runs list or show"]
+  C -->|exists| D["Keep existing VM"]
+  C -->|absent| R["Retry the mutation"]
