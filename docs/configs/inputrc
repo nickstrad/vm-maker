@@ -1,0 +1,20 @@
+# Use vi-style keybindings at every readline prompt (bash, psql, python, ...)
+set editing-mode vi
+set keymap vi
+
+# Show which vi mode you are in at the prompt: (ins) or (cmd)
+set show-mode-in-prompt on
+
+# Keep the handy emacs-style shortcuts in insert mode
+set keyseq-timeout 50
+$if mode=vi
+  set keymap vi-insert
+  "\C-a": beginning-of-line
+  "\C-e": end-of-line
+  "\C-l": clear-screen
+  "\C-r": reverse-search-history
+  # 'jj' returns to command mode, matching the vim config
+  "jj": vi-movement-mode
+  set keymap vi-command
+  "\C-l": clear-screen
+$endif

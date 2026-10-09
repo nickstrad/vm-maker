@@ -1,0 +1,24 @@
+# Learner PostgreSQL lab: /labs/pglab/primary, port 5440, socket /tmp, database lab.
+# Runs as a system service so it survives SSH/tmux logouts and reboots. Port, socket,
+# archiving and logging come from the cluster's own postgresql.conf.
+[Unit]
+Description=PostgreSQL 16 learner lab (/labs/pglab/primary, port 5440)
+Documentation=https://www.postgresql.org/docs/16/server-start.html
+After=network.target
+
+[Service]
+Type=notify
+User=postgres
+Group=postgres
+Environment=PGDATA=/labs/pglab/primary
+OOMScoreAdjust=-900
+ExecStart=/usr/lib/postgresql/16/bin/postgres -D ${PGDATA}
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutSec=infinity
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

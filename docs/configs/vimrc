@@ -1,0 +1,111 @@
+" ============================================================
+"  Indentation: 2 spaces per tab
+" ============================================================
+set expandtab        " insert spaces instead of a literal tab character
+set tabstop=2        " a tab character displays as 2 columns wide
+set softtabstop=2    " pressing Tab/Backspace moves 2 columns
+set shiftwidth=2     " >> and << and autoindent shift by 2
+set autoindent       " new lines keep the previous line's indent
+
+" Makefiles are broken by spaces -- they require real tab characters.
+filetype plugin on
+autocmd FileType make setlocal noexpandtab
+
+" ============================================================
+"  'jj' leaves insert mode
+" ============================================================
+inoremap jj <Esc>
+set timeoutlen=500   " ms to wait for the 2nd j before inserting a plain j
+set ttimeoutlen=10   " ms to decode an escape sequence; makes Esc feel instant
+
+" ============================================================
+"  Syntax highlighting
+" ============================================================
+syntax on
+
+" ============================================================
+"  Searching
+" ============================================================
+set ignorecase       " /foo also matches Foo and FOO
+set smartcase        " ...but /Foo (any capital) becomes case-sensitive again
+set incsearch        " jump to the first match while you are still typing
+
+" ============================================================
+"  Orientation on screen
+" ============================================================
+set number           " line numbers down the left
+set cursorline       " highlight the line the cursor is on
+set scrolloff=5      " keep 5 lines visible above/below the cursor
+set laststatus=2     " always show the status line (filename, position)
+set ruler            " show line,column of the cursor
+set showcmd          " show the keys of a partially typed command
+set title            " set the terminal/tmux window title to the filename
+set shortmess+=I     " skip the startup splash screen
+
+" ============================================================
+"  Make stray whitespace visible (you indent with spaces)
+" ============================================================
+set list
+set listchars=tab:>-,trail:.,nbsp:+
+
+" ============================================================
+"  Fewer dead ends
+" ============================================================
+set hidden           " leave a modified buffer without saving it first
+set confirm          " on :q with unsaved changes, prompt instead of erroring
+set autoread         " reload a file that changed on disk outside vim
+set backspace=indent,eol,start   " backspace over autoindent, line breaks, and
+                                 " text that was there before you started typing
+set history=1000     " remember 1000 : commands and searches, not 50
+set encoding=utf-8
+
+" ============================================================
+"  Tab-completion on the : command line
+" ============================================================
+set wildmenu                        " show the matches as a menu
+set wildmode=longest:full,full      " complete as far as unambiguous, then list
+set wildignorecase                  " :e Foo also finds foo.txt
+
+" ============================================================
+"  Splits open where you expect
+" ============================================================
+set splitbelow       " :split puts the new window below
+set splitright       " :vsplit puts the new window to the right
+
+" ============================================================
+"  Undo history survives closing the file
+" ============================================================
+set undofile
+set undodir=~/.vim/undo//
+set noswapfile       " no .swp clutter; undofile is the better safety net
+
+" ============================================================
+"  Reopen a file at the line you left it on
+" ============================================================
+autocmd BufReadPost *
+  \ if line("'\"") >= 1 && line("'\"") <= line("$") && &filetype !~# 'commit'
+  \ |   execute "normal! g`\""
+  \ | endif
+
+" ============================================================
+"  24-bit color (delete this block if colors ever look wrong)
+" ============================================================
+if has('termguicolors')
+  let &t_8f = "\<Esc>[38;2;%lu;%lu;%lum"
+  let &t_8b = "\<Esc>[48;2;%lu;%lu;%lum"
+  set termguicolors
+endif
+
+" ============================================================
+"  Cursorline colour
+" ============================================================
+" vim thinks this terminal has a light background, so its built-in CursorLine
+" is Grey90 -- near-white, which swallows white text (the COURSE=... value in
+" a shell script is plain, unhighlighted text, i.e. terminal white).
+" Repaint it as a dark, subtle bar instead, and re-apply it after any
+" :colorscheme, since loading one resets every highlight group.
+augroup dim_cursorline
+  autocmd!
+  autocmd ColorScheme * highlight CursorLine ctermbg=236 guibg=#2a2a2a cterm=NONE gui=NONE
+augroup END
+highlight CursorLine ctermbg=236 guibg=#2a2a2a cterm=NONE gui=NONE

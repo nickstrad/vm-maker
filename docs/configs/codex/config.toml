@@ -1,0 +1,86 @@
+model = "gpt-6-astra"
+model_reasoning_effort = "medium"
+approvals_reviewer = "user"
+
+[shell_environment_policy]
+set = { KB_CALLER = "codex" }
+
+[projects."/root/test"]
+trust_level = "trusted"
+
+[projects."/root/tools"]
+trust_level = "trusted"
+
+[projects."/root/tools/pg-systems-tutor"]
+trust_level = "trusted"
+
+[projects."/root"]
+trust_level = "trusted"
+
+[projects."/root/Software/skills-tools"]
+trust_level = "trusted"
+
+[projects."/root/Research/grpc"]
+trust_level = "trusted"
+
+[projects."/root/Research/disk-analysis"]
+trust_level = "trusted"
+
+[projects."/root/Research/postgres"]
+trust_level = "trusted"
+
+[projects."/root/Raw/knowledge"]
+trust_level = "trusted"
+
+[projects."/root/Software/agent-handler"]
+trust_level = "trusted"
+
+[projects."/root/Software/perpetual"]
+trust_level = "trusted"
+
+[projects."/root/Software/portfolio"]
+trust_level = "trusted"
+
+[projects."/root/Software/systems-trinkets"]
+trust_level = "trusted"
+
+[projects."/root/Software/vm-agent"]
+trust_level = "trusted"
+
+[projects."/root/Software/vm-maker"]
+trust_level = "trusted"
+
+[projects."/root/Software/prototyper"]
+trust_level = "trusted"
+
+[projects."/tmp"]
+trust_level = "trusted"
+
+[tui]
+theme = "monokai-extended-origin"
+status_line = ["model", "current-dir", "git-branch", "context-used", "context-window-size", "context-remaining"]
+screen_reader_detection_done = true
+
+[tui.model_availability_nux]
+gpt-6-astra = 4
+"gpt-6.1-sol" = 4
+
+[[skills.config]]
+path = "/root/.codex/plugins/cache/openai-curated-remote/google-drive/0.1.16/skills/google-drive/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/root/.codex/plugins/cache/openai-curated-remote/google-drive/0.1.16/skills/google-drive-comments/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/root/.codex/plugins/cache/openai-curated-remote/google-drive/0.1.16/skills/google-sheets/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/root/.codex/plugins/cache/openai-curated-remote/google-drive/0.1.16/skills/google-slides/SKILL.md"
+enabled = false
+
+[[skills.config]]
+path = "/root/.codex/plugins/cache/openai-curated-remote/openai-templates/0.1.1/skills/artifact-template-analytics-dashboard/SKILL.md"
+enabled = false

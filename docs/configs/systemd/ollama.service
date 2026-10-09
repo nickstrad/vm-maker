@@ -1,0 +1,14 @@
+[Unit]
+Description=Ollama Service
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ollama serve
+User=ollama
+Group=ollama
+Restart=always
+RestartSec=3
+Environment="PATH=/root/Software/skills-tools/curriculum-tools/courses/grpc/.tools/bin:/root/Software/skills-tools/curriculum-tools/courses/grpc/.tools/go/bin:/usr/lib/postgresql/16/bin:/root/Software/skills-tools/bin:/root/Software/skills-tools/curriculum-tools/courses/grpc/.tools/bin:/root/Software/skills-tools/curriculum-tools/courses/grpc/.tools/go/bin:/usr/lib/postgresql/16/bin:/usr/local/go/bin:/root/Software/skills-tools/systems-projects/bin:/root/Software/skills-tools/bin:/root/.nvm/versions/node/v22.23.2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"
+
+[Install]
+WantedBy=default.target

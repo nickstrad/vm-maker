@@ -1,0 +1,7 @@
+interface:
+  display_name: "Systems Tutor"
+  short_description: "Systems courses, roadmap, lessons, and tracked progress"
+  default_prompt: "Use $tutor to show my next unfinished lesson or help me choose what to learn next."
+
+policy:
+  allow_implicit_invocation: true

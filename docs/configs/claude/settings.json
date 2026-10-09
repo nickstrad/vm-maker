@@ -1,0 +1,30 @@
+{
+  "env": {
+    "KB_CALLER": "claude"
+  },
+  "model": "fable",
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline.sh"
+  },
+  "enabledPlugins": {},
+  "tui": "fullscreen",
+  "theme": "dark-ansi",
+  "permissions": {
+    "allow": [
+      "Bash",
+      "BashOutput",
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep",
+      "Task",
+      "TodoWrite",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "KillShell"
+    ]
+  }
+}
