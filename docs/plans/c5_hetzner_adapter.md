@@ -1,7 +1,7 @@
 # c5 · Hetzner Cloud adapter
 
-**Wave c** · agent `implementer-opus-high` · depends on b3 · owns `src/providers/hetzner/**`,
-`test/fixtures/hetzner/**`
+**Wave c** · builder-strong (opus high / sol high: real API quirks behind one port) · depends
+on b3 · owns `src/providers/hetzner/**`, `test/fixtures/hetzner/**`
 
 ## What this slice gives us
 

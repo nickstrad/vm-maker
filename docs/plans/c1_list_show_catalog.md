@@ -1,9 +1,10 @@
 # c1 · list, show, catalog
 
-**Wave c** · agent `implementer-sonnet-high` · depends on b1, b4, b5 · owns
-`src/commands/list.ts`, `src/commands/show.ts`, `src/commands/catalog.ts`,
-`src/commands/registry.ts`, `src/cli/handlers/list.ts`, `src/cli/handlers/show.ts`,
-`src/cli/handlers/catalog*.ts`, `src/cli/render/inventory.ts`, `src/cli/render/catalog.ts`
+**Wave c** · builder-fast (sonnet high / luna high: read-only commands and renderers over fixed
+modules) · depends on b1, b4, b5 · owns `src/commands/list.ts`, `src/commands/show.ts`,
+`src/commands/catalog.ts`, `src/commands/registry.ts`, `src/cli/handlers/list.ts`,
+`src/cli/handlers/show.ts`, `src/cli/handlers/catalog*.ts`, `src/cli/render/inventory.ts`,
+`src/cli/render/catalog.ts`
 
 ## What this slice gives us
 

@@ -1,8 +1,8 @@
 # a2 · Observability and test tooling
 
-**Wave a** · agent `implementer-opus-high` · depends on nothing · owns `src/log/**`,
-`src/main.ts`, `src/hello/**` (delete), `deno.json`, `test/support/fc.ts`,
-`test/support/layers.ts`
+**Wave a** · builder-strong (opus high / sol high: Effect 4 logger and Cause internals must be
+verified against the installed source) · depends on nothing · owns `src/log/**`, `src/main.ts`,
+`src/hello/**` (delete), `deno.json`, `test/support/fc.ts`, `test/support/layers.ts`
 
 ## What this slice gives us
 

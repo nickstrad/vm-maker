@@ -23,6 +23,8 @@
     "lineWidth": 100
   },
   "exclude": [
-    "docs/"
+    "docs/",
+    "cloud-init/",
+    ".worktrees/"
   ]
 }

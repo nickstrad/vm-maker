@@ -1,8 +1,9 @@
 # c2 · stop, start, delete
 
-**Wave c** · agent `implementer-opus-high` · depends on b1, b4, b6 · owns
-`src/commands/lifecycle.ts`, `src/confirm/**`, `src/cli/handlers/stop.ts`,
-`src/cli/handlers/start.ts`, `src/cli/handlers/delete.ts`, `src/cli/render/receipt.ts`
+**Wave c** · builder-strong (opus high / sol high: safety rules across confirm, re-fetch, and
+wait) · depends on b1, b4, b6 · owns `src/commands/lifecycle.ts`, `src/confirm/**`,
+`src/cli/handlers/stop.ts`, `src/cli/handlers/start.ts`, `src/cli/handlers/delete.ts`,
+`src/cli/render/receipt.ts`
 
 ## What this slice gives us
 

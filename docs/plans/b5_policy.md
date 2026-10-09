@@ -1,6 +1,7 @@
 # b5 · Creation policy
 
-**Wave b** · agent `implementer-opus-high` · depends on a1 · owns `src/policy/**`
+**Wave b** · builder-strong (opus high / sol high: pure policy whose semantics are the thing
+under test) · depends on a1 · owns `src/policy/**`
 
 ## What this slice gives us
 

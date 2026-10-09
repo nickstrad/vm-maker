@@ -1,6 +1,7 @@
 # a1 · Domain contract
 
-**Wave a** · agent `implementer-opus-high` · depends on nothing · owns `src/domain/**`,
+**Wave a** · builder-deep (fable high / astra high: the contract every later slice imports; a
+wrong shape is expensive to change) · depends on nothing · owns `src/domain/**`,
 `src/providers/port.ts`, `test/support/arbitraries.ts`
 
 ## What this slice gives us

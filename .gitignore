@@ -10,6 +10,9 @@ cov_profile/
 bin/
 dist/
 
+# Per-slice git worktrees created by the coordinator (docs/plans/AGENTS.md)
+.worktrees/
+
 # Secrets & local config — provider API tokens must never be committed
 .env
 .env.*

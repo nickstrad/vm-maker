@@ -1,6 +1,7 @@
 # b3 · HTTP core
 
-**Wave b** · agent `implementer-opus-high` · depends on a1, a2 · owns `src/http/**`
+**Wave b** · builder-deep (fable high / astra high: retry, pagination, and lost-response
+semantics are the thing under test) · depends on a1, a2 · owns `src/http/**`
 
 ## What this slice gives us
 

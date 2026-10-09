@@ -1,7 +1,7 @@
 # c6 · DigitalOcean adapter
 
-**Wave c** · agent `implementer-opus-high` · depends on b3 · owns
-`src/providers/digitalocean/**`, `test/fixtures/digitalocean/**`
+**Wave c** · builder-strong (opus high / sol high: real API quirks behind one port) · depends
+on b3 · owns `src/providers/digitalocean/**`, `test/fixtures/digitalocean/**`
 
 ## What this slice gives us
 

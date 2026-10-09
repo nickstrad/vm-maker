@@ -1,7 +1,7 @@
 # b1 · CLI spine
 
-**Wave b** · agent `implementer-opus-high` · depends on a1, a2 · owns `src/cli/**`,
-`src/main.ts`
+**Wave b** · builder-strong (opus high / sol high: the whole command surface and envelope on an
+unfamiliar effect/cli API) · depends on a1, a2 · owns `src/cli/**`, `src/main.ts`
 
 ## What this slice gives us
 

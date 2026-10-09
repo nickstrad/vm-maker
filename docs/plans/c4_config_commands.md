@@ -1,8 +1,8 @@
 # c4 · config show, config check
 
-**Wave c** · agent `implementer-sonnet-high` · depends on b1, b2 · owns
-`src/commands/config.ts`, `src/cli/handlers/configShow.ts`,
-`src/cli/handlers/configCheck.ts`, `src/cli/render/config.ts`
+**Wave c** · builder-fast (sonnet high / luna high: renderers over b2's config; the tests are
+the spec) · depends on b1, b2 · owns `src/commands/config.ts`,
+`src/cli/handlers/configShow.ts`, `src/cli/handlers/configCheck.ts`, `src/cli/render/config.ts`
 
 ## What this slice gives us
 

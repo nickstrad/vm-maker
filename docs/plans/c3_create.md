@@ -1,6 +1,7 @@
 # c3 · create
 
-**Wave c** · agent `implementer-opus-high` · depends on b1, b2, b4, b5, b6 · owns
+**Wave c** · builder-deep (fable high / astra high: integrates five modules, carries most exit
+codes, and the redaction invariant must hold end to end) · depends on b1, b2, b4, b5, b6 · owns
 `src/commands/create.ts`, `src/cli/handlers/create.ts`, `src/cli/render/create.ts`
 
 ## What this slice gives us

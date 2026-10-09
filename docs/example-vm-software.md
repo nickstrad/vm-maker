@@ -12,7 +12,9 @@ Companion folders:
 - [`skills/`](skills/README.md): the five global agent skills (Claude Code and Codex) and how to
   reinstall them.
 - [`../cloud-init/lab.yaml`](../cloud-init/lab.yaml): the current template. The
-  [gap list](#gaps-in-the-current-cloud-initlabyaml) at the end says what it is missing.
+  [gap list](#gaps-in-the-current-cloud-initlabyaml) at the end says what it is missing, and
+  [What cloud-init covers](#what-cloud-init-covers-and-what-a-new-vm-will-be-missing) says
+  which of those gaps cloud-init will close and which stay open.
 
 Design decisions this inventory assumes:
 
@@ -243,7 +245,9 @@ render time or a manual post-boot step:
 
 ## Gaps in the current `cloud-init/lab.yaml`
 
-What the template does today versus what this box has:
+What the template does today versus what this box has. The "Suggested change" column is the
+full wish list; plan p1 takes only the rows that fit cloud-init, and the
+[next section](#what-cloud-init-covers-and-what-a-new-vm-will-be-missing) lists what is left.
 
 | Area | `lab.yaml` | Reference box | Suggested change |
 | --- | --- | --- | --- |
@@ -269,9 +273,67 @@ What the template does today versus what this box has:
 | Playwright deps | absent | Chromium lib/font set | `npx playwright install --with-deps chromium` in a post-boot step for the repos that need it |
 | `/tmp` policy | default | emptied at boot, 30-day age-out (distro default) | nothing to do; just do not store state there |
 
+## What cloud-init covers, and what a new VM will be missing
+
+Cloud-init is a first-boot bootstrap. It runs once per instance, unattended, as root, with no
+TTY and no way to report back except its log. It is good at users and SSH keys, apt
+repositories and packages, writing a few files and joining a network. It cannot do logins,
+cannot be rerun to converge a machine, and its user-data is capped at 32 KiB on Hetzner. It
+is also readable through the metadata service and the provider API for the life of the
+instance. Recreating this whole box is configuration management, not cloud-init, so plan
+[p1](plans/p1_lab_cloud_init.md) deliberately stops at the bootstrap.
+
+### What `cloud-init/lab.yaml` will set up (p1)
+
+- `root` only, password SSH off, provider-injected keys.
+- The apt set from [Base system packages](#base-system-packages-apt), including the tools
+  the box is missing today (`ripgrep fd-find fzf bat` and the rest), plus `mosh` and
+  `shellcheck`.
+- Docker CE, containerd, buildx and compose, enabled at boot.
+- Tailscale, joined with `--ssh` when an auth key is rendered in, the forwarding sysctl and
+  `--advertise-exit-node`.
+- Node.js 22 from NodeSource with `@anthropic-ai/claude-code`, `@openai/codex` and
+  `sql-formatter` installed globally.
+- `/root/.config/lab/agents.env` holding whichever agent tokens were rendered in, sourced
+  from `.bashrc`.
+- `/var/lib/cloud/instance/lab-ready` when `runcmd` finishes.
+
+### What a new VM will be missing
+
+Nothing below is provisioned. Each item needs a manual step after boot or a tool built for
+configuration management.
+
+| Gap | Items | Why not cloud-init |
+| --- | --- | --- |
+| Logins and identity | Claude Code and Codex login (unless a token went into `agents.env`), `gh auth login`, a fresh `~/.ssh/id_ed25519` registered with GitHub, Tailscale exit-node approval in the admin console | Interactive, or an identity created after boot. Tokens in user-data are exposed to anything that can read the metadata service. |
+| Runtimes outside apt | Deno 2.9.5 in `~/.deno` with a PATH profile, Go (tarball, `GOPATH`/`GOCACHE`), nvm | Version-pinned curl installs; better owned by a version manager than a one-shot script |
+| Pinned and source-built tools | SQLite 3.53.4 with the inspection vtabs, PostgreSQL 16 binaries with clusters set to manual and `pglab.service` disabled, DuckDB 1.5.5 with the `postgres`/`sqlite` extensions, Firecracker v1.17.0, jailer and the `/var/lib/firecracker` images, glow v3.0.0 | Slow builds and checksummed downloads inside `cloud-final`; a failure is silent and cannot be retried without recreating the VM |
+| Optional heavy tools | Ollama with `nomic-embed-text`, k6, Playwright Chromium and its font and library set, PlantUML and its JRE | Hundreds of MB each, only some repos need them |
+| Personal environment | `vimrc` and `~/.vim/undo`, `inputrc`, `tmux.conf`, `gitconfig`, the `.bashrc` additions (PostgreSQL lab variables, aliases, vi mode), `glow.yml` | Dotfile management; changes far more often than the image |
+| Agent configuration | `~/.claude/CLAUDE.md`, `settings.json`, `statusline.sh`, `agents/`; `~/.codex/AGENTS.md` and `config.toml` with its trust list; `/root/AGENTS.md`; `MUSE_HATCH_README.md`; the five skills in both skill directories | Same as above, and the trust list depends on which repos exist |
+| Repositories and data | The eight repos under `/root/Software`, `/root/Raw/knowledge` (no remote exists yet), `/root/Documents`, `kb` and `tutor` built from them | Need GitHub auth first; the knowledge store must be pushed somewhere before it can be cloned |
+| Hardware | `/dev/kvm` for Firecracker | Decided by provider and instance type at create time. Hetzner support for nested virtualization is unverified. |
+
+Differences that come from what p1 does install:
+
+- **Node from NodeSource, not nvm.** `docs/configs/bashrc`, `MUSE_HATCH_README.md` and
+  `systemd/ollama.service` refer to `/root/.nvm/...`. Those paths will not exist. Edit them
+  when copying the configs over.
+- **Unpinned packages.** Apt, NodeSource and npm give whatever is current at boot, so two VMs
+  built a week apart can differ.
+- **Readiness.** `vm-maker create --wait` waits for the provider to report the VM running,
+  not for cloud-init. Run `ssh root@HOST cloud-init status --wait` before using the box.
+- **Kernel updates.** `package_upgrade: true` with `package_reboot_if_required: false` can
+  leave a new kernel installed but not running until the first reboot.
+
+Closing these gaps is not planned. The usual approach is a configuration tool run after boot
+over SSH: Ansible for the system layer, chezmoi for dotfiles and agent config, and mise for
+runtime pins. A Packer image can come later if boot time matters.
+
 ## Verifying a new VM
 
-A short check that mirrors the end of `lab-setup.sh`; every line should print a version:
+A short check that mirrors the end of `lab-setup.sh`. On the reference box every line prints
+a version; on a VM built only from `lab.yaml`, the tools in the gap table above print MISSING:
 
 ```bash
 export PATH="$HOME/.deno/bin:$HOME/.local/bin:/usr/local/go/bin:$PATH"

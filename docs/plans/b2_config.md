@@ -1,6 +1,7 @@
 # b2 · Config
 
-**Wave b** · agent `implementer-sonnet-high` · depends on a1, a2 · owns `src/config/**`
+**Wave b** · builder-fast (sonnet high / luna high: interfaces fixed by the plan; the tests are
+the spec) · depends on a1, a2 · owns `src/config/**`
 
 ## What this slice gives us
 

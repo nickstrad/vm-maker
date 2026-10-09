@@ -1,7 +1,8 @@
 # d1 · Production provider wiring
 
-**Wave d** · agent `implementer-sonnet-high` · depends on every c slice · owns
-`src/providers/live.ts`, `src/main.ts`, `deno.json` (tasks only)
+**Wave d** · builder-fast (sonnet high / luna high: wiring with interfaces fixed by the plan) ·
+depends on every c slice · owns `src/providers/live.ts`, `src/main.ts`, `deno.json` (tasks
+only)
 
 ## What this slice gives us
 

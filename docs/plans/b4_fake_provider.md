@@ -1,6 +1,7 @@
 # b4 · Fake provider
 
-**Wave b** · agent `implementer-sonnet-high` · depends on a1 · owns `src/providers/fake/**`
+**Wave b** · builder-fast (sonnet high / luna high: in-memory fake over a fixed port; the tests
+are the spec) · depends on a1 · owns `src/providers/fake/**`
 
 ## What this slice gives us
 

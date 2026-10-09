@@ -1,7 +1,7 @@
 # b6 · Bounded waiting
 
-**Wave b** · agent `implementer-opus-high` · depends on a1, b4 (tests only; use a1's port
-type for code) · owns `src/wait/**`
+**Wave b** · builder-strong (opus high / sol high: Schedule and TestClock deadline semantics) ·
+depends on a1, b4 (tests only; use a1's port type for code) · owns `src/wait/**`
 
 ## What this slice gives us
 

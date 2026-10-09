@@ -1,0 +1,7 @@
+%% draw-visual: -x 3 -y 1 -p 0
+graph TD
+  WS["workstation: envsubst → lab.rendered.yaml"] --> CREATE["vm-maker create NAME --user-data"]
+  CREATE --> CI["cloud-init: root, apt set, docker, tailscale"]
+  CI --> AG["node 22 + claude, codex; agents.env"]
+  AG --> READY["/var/lib/cloud/instance/lab-ready"]
+  READY --> GAP["post-boot by hand: see example-vm-software.md"]
